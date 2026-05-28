@@ -2,7 +2,14 @@ spring.application.name=trip-linker
 
 spring.datasource.driver-class-name=org.mariadb.jdbc.Driver
 spring.datasource.url=jdbc:mariadb://localhost:3306/triplinker
-spring.datasource.username=???_DB_????_?????
-spring.datasource.password=???_DB_?????_?????
+spring.datasource.username=DB_USERNAME
+spring.datasource.password=DB_PASSWORD
 
 spring.jpa.hibernate.ddl-auto=update
+
+#JWT Secret Key
+jwt.secret=
+#Access Token expire time (30 minutes)
+jwt.access-token-validity-in-milliseconds=1800000
+#Refresh Token expire time (7 days)
+jwt.refresh-token-validity-in-milliseconds=604800000
