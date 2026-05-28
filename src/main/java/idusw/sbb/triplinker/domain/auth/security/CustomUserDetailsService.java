@@ -31,4 +31,12 @@ public class CustomUserDetailsService implements UserDetailsService {
         //조회된 엔티티를 Security 전용 객체인 CustomUserDetails로 감싸서 반환
         return new CustomUserDetails(user);
     }
+
+    //저장된 유저 PK(ID)를 기반으로 인증 객체를 가져오는 메서드
+    //로그인 시에는 String 형태의 username을 쓰지만, 토큰 검증 후에는 Long 형태의 ID를 사용하므로 추가 구현
+    public UserDetails loadUserById(Long id) {
+        User user = userRepository.findById(id)
+                .orElseThrow(() -> new IllegalArgumentException("해당 ID의 유저를 찾을 수 없습니다."));
+        return new CustomUserDetails(user);
+    }
 }
