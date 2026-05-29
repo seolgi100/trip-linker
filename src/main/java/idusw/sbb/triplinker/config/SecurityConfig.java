@@ -48,6 +48,8 @@ public class SecurityConfig {
                 .authorizeHttpRequests(auth -> auth
                         //인증 없이 누구나 접근 가능한 공통 API 목록(비로그인)
                         .requestMatchers(
+                                "/",
+                                "/error",
                                 "/api/auth/signup",                 //회원가입
                                 "/api/auth/login",                  //로그인
                                 "/api/auth/check-username",         //아이디 중복 확인
@@ -84,7 +86,7 @@ public class SecurityConfig {
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration configuration = new CorsConfiguration();
 
-        //허용할 출처(프론트엔드 도메인) 설정 - 배포 시 특정 도메인으로 변경 권장
+        //허용할 출처(프론트엔드 도메인) 설정 - 배포 시 특정 도메인으로 변경
         configuration.setAllowedOriginPatterns(Arrays.asList("*"));
         //모든 HTTP 메서드(GET, POST, PUT, DELETE 등) 요청 허용
         configuration.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "DELETE", "OPTIONS"));
