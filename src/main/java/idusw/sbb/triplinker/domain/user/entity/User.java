@@ -6,6 +6,7 @@ import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 
 @Entity
 @Table(name = "users")
@@ -47,8 +48,12 @@ public class User {
     @Column(nullable = false, length = 10)
     private String status; // ACTIVE, DELETED, SUSPENDED
 
+    //90일 비밀번호 변경 체크용 필드 추가
+    @Column(name = "password_updated_at")
+    private LocalDateTime passwordUpdatedAt;
+
     @Builder
-    public User(String username, String passwordHash, String name, String email, String region, LocalDate birthDate, String gender, String mbti, String role, String status) {
+    public User(String username, String passwordHash, String name, String email, String region, LocalDate birthDate, String gender, String mbti, String role, String status, LocalDateTime passwordUpdatedAt) {
         this.username = username;
         this.passwordHash = passwordHash;
         this.name = name;
@@ -59,6 +64,8 @@ public class User {
         this.mbti = mbti;
         this.role = (role != null) ? role : "USER"; // 기본값 설정
         this.status = (status != null) ? status : "ACTIVE"; // 기본값 설정
+        this.passwordUpdatedAt = passwordUpdatedAt;
+
     }
 
     // User.java 클래스 내부에 추가할 메서드들 (맨 밑에 붙여넣기)
