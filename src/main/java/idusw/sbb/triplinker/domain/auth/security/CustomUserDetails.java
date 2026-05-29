@@ -1,12 +1,15 @@
 package idusw.sbb.triplinker.domain.auth.security;
 
 import idusw.sbb.triplinker.domain.user.entity.User;
+import lombok.Getter;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.userdetails.UserDetails;
+import org.springframework.security.oauth2.core.user.OAuth2User;
 
 import java.util.Collection;
 import java.util.Collections;
+import java.util.Map;
 
 /*
 * Spring Security에서 사용하는 유저 정보 객체 (어댑터 클래스)
@@ -14,17 +17,21 @@ import java.util.Collections;
 * - Security 인증 과정에서 필요한 유저의 권한 및 계정 상태 정보를 제공
 * */
 
-public class CustomUserDetails implements UserDetails {
+public class CustomUserDetails implements UserDetails, OAuth2User {
 
+    //애플리케이션 내에서 User 엔티티 정보가 필요할 때 쉽게 꺼내쓰기 위한 메서드
+    @Getter
     private final User user;
+    private final Map<String, Object> attributes;
 
     public CustomUserDetails(User user) {
         this.user = user;
+        this.attributes = Collections.emptyMap();
     }
 
-    //애플리케이션 내에서 User 엔티티 정보가 필요할 때 쉽게 꺼내쓰기 위한 메서드
-    public User getUser() {
-        return user;
+    public CustomUserDetails(User user, Map<String, Object> attributes) {
+        this.user = user;
+        this.attributes = attributes;
     }
 
     //유저의 권한(Role)을 Security에 전달
@@ -72,5 +79,15 @@ public class CustomUserDetails implements UserDetails {
     public boolean isEnabled() {
         //DB의 status가 "ACTIVE"인 정상 회원만 true 반환 (탈퇴 회원 구분)
         return "ACTIVE".equals(user.getStatus());
+    }
+
+    @Override
+    public String getName() {
+        return String.valueOf(user.getId());
+    }
+
+    @Override
+    public Map<String, Object> getAttributes() {
+        return attributes != null ? attributes : Collections.emptyMap();
     }
 }
