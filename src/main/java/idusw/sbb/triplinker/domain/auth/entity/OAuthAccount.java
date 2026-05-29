@@ -1,5 +1,6 @@
 package idusw.sbb.triplinker.domain.auth.entity;
 
+
 import jakarta.persistence.*;
 import lombok.Builder;
 import lombok.Getter;
@@ -7,28 +8,32 @@ import lombok.NoArgsConstructor;
 
 import java.time.LocalDateTime;
 
+
 @Entity
-@Table(name = "refresh_tokens")
+@Table(name = "oauth_accounts")
 @Getter
 @NoArgsConstructor
-public class RefreshToken {
+public class OAuthAccount {
 
-    @Id @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
     private Long userId;
 
-    private String tokenHash;
+    //소셜 종류 (kakao, google 등)
+    private String provider;
 
-    private LocalDateTime expiresAt;
+    //고유 식별 번호
+    private String providerId;
 
     private LocalDateTime createdAt;
 
     @Builder
-    public RefreshToken(Long userId, String tokenHash, LocalDateTime expiresAt, LocalDateTime createdAt) {
+    public OAuthAccount(Long userId, String provider, String providerId) {
         this.userId = userId;
-        this.tokenHash = tokenHash;
-        this.expiresAt = expiresAt;
+        this.provider = provider;
+        this.providerId = providerId;
         this.createdAt = LocalDateTime.now();
     }
 }
