@@ -1,6 +1,8 @@
 package idusw.sbb.triplinker.config;
 
 import idusw.sbb.triplinker.domain.auth.filter.JwtAuthenticationFilter;
+import idusw.sbb.triplinker.domain.auth.security.OAuth2SuccessHandler;
+import idusw.sbb.triplinker.domain.auth.service.CustomOAuth2UserService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -27,6 +29,8 @@ import java.util.Arrays;
 public class SecurityConfig {
 
     private final JwtAuthenticationFilter jwtAuthenticationFilter;
+    private final CustomOAuth2UserService customOAuth2UserService;
+    private final OAuth2SuccessHandler oAuth2SuccessHandler;
 
     //비밀번호 암호화 도구 등록
     @Bean
@@ -73,6 +77,12 @@ public class SecurityConfig {
 
                         //그 외의 모든 API 요청은 반드시 인증(JWT 유효성 검증) 필요
                         .anyRequest().authenticated()
+                )
+
+                //소셜 로그인 설정
+                .oauth2Login(oauth2 -> oauth2
+                        .userInfoEndpoint(userInfo -> userInfo.userService(customOAuth2UserService))
+                        .successHandler(oAuth2SuccessHandler)
                 )
 
                 //Spring Security의 기본 인증 필터가 동작하기 전에, 커스텀 JWT 필터가 먼저 토큰을 검증하도록 설정
