@@ -3,6 +3,7 @@ package idusw.sbb.triplinker.domain.auth.controller;
 import idusw.sbb.triplinker.domain.auth.dto.LoginRequestDto;
 import idusw.sbb.triplinker.domain.auth.dto.TokenResponseDto;
 import idusw.sbb.triplinker.domain.auth.service.AuthService;
+import idusw.sbb.triplinker.global.common.ApiResponse;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -14,11 +15,13 @@ public class AuthController {
 
     private final AuthService authService;
 
-    // POST /api/auth/login
     @PostMapping("/login")
-    public ResponseEntity<TokenResponseDto> login(@RequestBody LoginRequestDto request) {
+    public ResponseEntity<ApiResponse<TokenResponseDto>> login(@RequestBody LoginRequestDto request) {
 
-        TokenResponseDto response = authService.login(request);
-        return ResponseEntity.ok(response);
+        TokenResponseDto tokenData = authService.login(request);
+
+        return ResponseEntity.ok(
+                ApiResponse.success("로그인 성공", tokenData)
+        );
     }
 }
