@@ -36,8 +36,9 @@ public class CustomOAuth2UserService extends DefaultOAuth2UserService {
         String providerId = extractProviderId(provider, oAuth2User.getAttributes());
 
         //4. OAuthAccount에 있는 사람인지 확인하고, 없으면 자동 회원가입
+        Map<String, Object> attributes = oAuth2User.getAttributes();
         OAuthAccount oauthAccount = oauthAccountRepository.findByProviderAndProviderId(provider, providerId)
-                .orElseGet(() -> registerNewOAuthUser(provider, providerId));
+                .orElseGet(() -> registerNewOAuthUser(provider, providerId, attributes));
 
         //5. User 테이블에서 이 사람의 회원 정보 가져오기
         User user = userRepository.findById(oauthAccount.getUserId())
@@ -57,26 +58,62 @@ public class CustomOAuth2UserService extends DefaultOAuth2UserService {
         throw new OAuth2AuthenticationException("지원하지 않는 소셜 로그인입니다: " + provider);
     }
 
-    //처음 온 소셜 유저 "강제 자동 회원가입" 로직
-    private OAuthAccount registerNewOAuthUser(String provider, String providerId) {
+    //처음 온 소셜 유저 강제 자동 회원가입
+    private OAuthAccount registerNewOAuthUser(String provider, String providerId, Map<String, Object> attributes) {
         //1. User 테이블에 넣을 임시 아이디 생성 (예: kakao_123456789)
         String dummyUsername = provider + "_" + providerId;
 
-        //2. User 테이블에 회원가입(소셜은 비밀번호가 없으니 UUID로 쓰레기값 넣기)
+        //2. 소셜 응답에서 이메일·이름 추출 (provider마다 구조가 다름)
+        String email = extractEmail(provider, providerId, attributes);
+        String name  = extractName(provider, attributes);
+
+        //3. User 테이블에 회원가입(소셜은 비밀번호가 없으니 UUID로 쓰레기값 넣기)
         User newUser = User.builder()
                 .username(dummyUsername)
-                .passwordHash(UUID.randomUUID().toString()) //절대 로그인할 수 없는 쓰레기 암호
+                .passwordHash(UUID.randomUUID().toString())
+                .email(email)
+                .name(name)
+                .region("미설정")
                 .role("USER")
                 .status("ACTIVE")
                 .build();
         userRepository.save(newUser);
 
-        //3. OAuth 장부에도 기록
+        //4. OAuth 장부에도 기록
         OAuthAccount newAccount = OAuthAccount.builder()
                 .userId(newUser.getId())
                 .provider(provider)
                 .providerId(providerId)
                 .build();
         return oauthAccountRepository.save(newAccount);
+    }
+
+    // 카카오: kakao_account.email / 구글: email (최상위)
+    @SuppressWarnings("unchecked")
+    private String extractEmail(String provider, String providerId, Map<String, Object> attributes) {
+        if ("kakao".equals(provider)) {
+            Map<String, Object> kakaoAccount = (Map<String, Object>) attributes.get("kakao_account");
+            if (kakaoAccount != null && kakaoAccount.get("email") != null) {
+                return (String) kakaoAccount.get("email");
+            }
+            // 이메일 동의 안 한 경우 고유값으로 대체
+            return provider + "_" + providerId + "@oauth.noemail";
+        }
+        // 구글
+        Object email = attributes.get("email");
+        return email != null ? (String) email : provider + "_" + providerId + "@oauth.noemail";
+    }
+
+    // 카카오: properties.nickname / 구글: name (최상위)
+    @SuppressWarnings("unchecked")
+    private String extractName(String provider, Map<String, Object> attributes) {
+        if ("kakao".equals(provider)) {
+            Map<String, Object> properties = (Map<String, Object>) attributes.get("properties");
+            if (properties != null && properties.get("nickname") != null) {
+                return (String) properties.get("nickname");
+            }
+        }
+        Object name = attributes.get("name");
+        return name != null ? (String) name : "소셜유저";
     }
 }

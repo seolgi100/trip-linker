@@ -45,14 +45,18 @@ public class OAuth2SuccessHandler extends SimpleUrlAuthenticationSuccessHandler 
                 .expiresAt(LocalDateTime.now().plusDays(7))
                 .build());
 
-        //프론트엔드(가 기다리고 있는 주소로 토큰을 담아서 전달
-        String targetUrl = UriComponentsBuilder.fromUriString("http://localhost:3000/oauth2/redirect")
+        //현재 서버 주소로 동적 변경
+        //토큰을 쿼리 파라미터로 담아 현재 서버의 루트 페이지로 리다이렉트
+        //app_main.js의 _handleOAuthCallback()이 URL 파라미터에서 토큰을 읽어 처리
+        String baseUrl = request.getScheme() + "://" + request.getServerName()
+                + (request.getServerPort() != 80 && request.getServerPort() != 443 ? ":" + request.getServerPort() : "")
+                + "/";
+        String targetUrl = UriComponentsBuilder.fromUriString(baseUrl)
                 .queryParam("accessToken", accessToken)
                 .queryParam("refreshToken", refreshToken)
                 .build().toUriString();
 
         getRedirectStrategy().sendRedirect(request, response, targetUrl);
-        super.onAuthenticationSuccess(request, response, authentication);
     }
 
     private String hashSha256(String input) {

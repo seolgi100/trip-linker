@@ -32,7 +32,7 @@ public class DummyDataInit implements CommandLineRunner {
                     .region("서울")
                     .role("USER")
                     .status("ACTIVE")
-                    .passwordUpdatedAt(LocalDateTime.now())
+                    .lastPwChangedAt(LocalDateTime.now())
                     .build();
 
             userRepository.save(dummyUser);
