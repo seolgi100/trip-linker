@@ -1,5 +1,6 @@
 package idusw.sbb.triplinker.global.exception;
 
+import idusw.sbb.triplinker.global.common.ApiResponse;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -13,15 +14,22 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(SocialAccountExistException.class)
     public ResponseEntity<Map<String, String>> handleSocialAccountExistException(SocialAccountExistException ex) {
-
         Map<String, String> errorResponse = new HashMap<>();
-
-        //프론트엔드가 에러 종류를 식별할 수 있는 암호(코드)
         errorResponse.put("code", "SOCIAL_ACCOUNT_EXIST");
-        errorResponse.put("message", ex.getMessage()); //"이미 소셜 계정으로 가입된 이메일입니다."
-        errorResponse.put("provider", ex.getProvider()); //"kakao" 또는 "google"
-
-        //409 Conflict (충돌) 상태 코드 응답
+        errorResponse.put("message", ex.getMessage());
+        errorResponse.put("provider", ex.getProvider());
         return ResponseEntity.status(HttpStatus.CONFLICT).body(errorResponse);
+    }
+
+    @ExceptionHandler(LoginFailException.class)
+    public ResponseEntity<ApiResponse<Map<String, Object>>> handleLoginFail(LoginFailException ex) {
+        Map<String, Object> data = new HashMap<>();
+        data.put("locked", ex.isLocked());
+        data.put("failCount", ex.getFailCount());
+        if (ex.isLocked()) {
+            data.put("remainSeconds", ex.getRemainSeconds());
+        }
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                .body(ApiResponse.error(ex.getMessage(), data));
     }
 }

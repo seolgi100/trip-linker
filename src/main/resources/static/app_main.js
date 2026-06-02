@@ -115,6 +115,7 @@ let _budgetSelectedTripId = null;
 let _activeTags    = new Set();
 let _loginFailCount = 0;
 let _loginLockedUntil = null;
+let _loginLockTimer = null;
 
 /* ───────────────────────────────────────────────
  * 3. NAV 라우팅
@@ -232,16 +233,39 @@ function updateNav() {
 }
 
 /** ─── POST /api/auth/login ─── */
-// let _loginFailCount = 0, _loginLockedUntil = null;
+function _startLockCountdown(totalSeconds, warnEl) {
+  if (_loginLockTimer) clearInterval(_loginLockTimer);
+  let secs = Math.ceil(totalSeconds);
+  _loginLockedUntil = Date.now() + secs * 1000;
+
+  function _fmt(s) {
+    const m = Math.floor(s / 60), r = s % 60;
+    return m > 0 ? `${m}분 ${r}초` : `${s}초`;
+  }
+
+  warnEl.innerHTML = `🔒 5회 실패로 잠겼습니다. ${_fmt(secs)} 후 재시도 가능합니다.`;
+  warnEl.style.display = 'flex';
+
+  _loginLockTimer = setInterval(() => {
+    secs--;
+    if (secs <= 0) {
+      clearInterval(_loginLockTimer);
+      _loginLockTimer = null;
+      _loginLockedUntil = null;
+      warnEl.innerHTML = '✅ 잠금이 해제되었습니다. 다시 로그인해주세요.';
+      return;
+    }
+    warnEl.innerHTML = `🔒 5회 실패로 잠겼습니다. ${_fmt(secs)} 후 재시도 가능합니다.`;
+  }, 1000);
+}
+
 async function tryLogin() {
   const id = document.getElementById('lid').value.trim();
   const pw = document.getElementById('lpw').value;
   const w  = document.getElementById('login-warn');
 
-  // 클라이언트 잠금 체크 (5회 실패 5분)
+  // 클라이언트 잠금 체크 — 카운트다운 중이면 API 호출 차단
   if (_loginLockedUntil && Date.now() < _loginLockedUntil) {
-    const s = Math.ceil((_loginLockedUntil - Date.now()) / 1000);
-    w.innerHTML = '🔒 계정 잠김. ' + s + '초 후 재시도.';
     w.style.display = 'flex';
     return;
   }
@@ -253,18 +277,14 @@ async function tryLogin() {
 
   const res = await api.post('/api/auth/login', { username: id, password: pw });
 
-// ✅ 교체
   if (!res.success) {
     if (res.data && res.data.locked) {
-      // 서버에서 잠금 상태 수신 (locked_until 기반)
-      const remain = res.data.remainSeconds
-          ? Math.ceil(res.data.remainSeconds) + '초 후 재시도 가능합니다.'
-          : '잠시 후 다시 시도해주세요.';
-      w.innerHTML = '🔒 로그인 5회 실패로 잠겼습니다. ' + remain;
+      _startLockCountdown(res.data.remainSeconds || 300, w);
     } else {
-      const failCount = res.data && res.data.failCount;
-      w.innerHTML = '⚠️ 아이디 또는 비밀번호 오류'
-          + (failCount ? ' (' + failCount + '/5회)' : '');
+      const failCount = res.data?.failCount;
+      w.innerHTML = failCount
+        ? `⚠️ 비밀번호 오류 (${failCount}/5회) · 5회 실패 시 5분 잠금`
+        : '⚠️ 아이디 또는 비밀번호를 확인해주세요.';
     }
     w.style.display = 'flex';
     return;

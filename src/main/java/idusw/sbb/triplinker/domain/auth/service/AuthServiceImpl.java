@@ -14,6 +14,7 @@ import idusw.sbb.triplinker.domain.user.entity.User;
 import idusw.sbb.triplinker.domain.user.entity.UserSecurityHistory;
 import idusw.sbb.triplinker.domain.user.repository.UserRepository;
 import idusw.sbb.triplinker.domain.user.repository.UserSecurityHistoryRepository;
+import idusw.sbb.triplinker.global.exception.LoginFailException;
 import idusw.sbb.triplinker.global.exception.SocialAccountExistException;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
@@ -41,6 +42,7 @@ public class AuthServiceImpl implements AuthService {
     private final OAuthAccountRepository oAuthAccountRepository;
 
     @Override
+    @Transactional(noRollbackFor = LoginFailException.class)
     public TokenResponseDto login(LoginRequestDto request) {
 
         //1. 유저 조회
@@ -49,15 +51,20 @@ public class AuthServiceImpl implements AuthService {
 
         //2. 계정 잠금 상태 확인
         if (user.isLocked()) {
-            throw new IllegalStateException("로그인 5회 실패로 계정이 잠겼습니다. 5분 후 다시 시도해주세요.");
+            long remainSeconds = ChronoUnit.SECONDS.between(LocalDateTime.now(), user.getLockedUntil());
+            throw new LoginFailException(true, user.getLoginFailCount(), Math.max(remainSeconds, 0));
         }
 
         //3. 비밀번호 검증(로그인 실패 시 카운트 증가)
         if (!passwordEncoder.matches(request.password(), user.getPasswordHash())) {
-             user.increaseLoginFailCount();
-             userRepository.save(user);
-             throw new IllegalArgumentException("비밀번호가 일치하지 않습니다.");
-         }
+            user.increaseLoginFailCount();
+            userRepository.save(user);
+            if (user.isLocked()) {
+                long remainSeconds = ChronoUnit.SECONDS.between(LocalDateTime.now(), user.getLockedUntil());
+                throw new LoginFailException(true, user.getLoginFailCount(), Math.max(remainSeconds, 0));
+            }
+            throw new LoginFailException(false, user.getLoginFailCount(), 0);
+        }
 
         //4. 로그인 성공 시 실패 카운트 초기화
         user.resetLoginFail();
