@@ -340,17 +340,35 @@
       <div id="my-withdraw" style="display:none">
         <h3 class="my-sec-ttl">회원 탈퇴</h3>
         <div id="withdraw-warn-txt" style="background:#FEF3F2;border:1px solid #FECACA;border-radius:9px;padding:14px;margin-bottom:14px;font-size:12px;color:#7F1D1D;line-height:1.8"></div>
-        <div id="withdraw-social-box" style="display:none" class="form-group">
+        <div class="form-group">
           <label class="form-label">이메일 재확인</label>
-          <input class="form-input" type="email" id="withdrawEmailInput" placeholder="가입한 이메일 주소 입력">
+          <input class="form-input" type="email" id="withdrawEmailInput" placeholder="가입한 이메일 주소 입력"
+                 onkeydown="if(event.key==='Enter')doWithdraw()">
         </div>
-        <div id="withdraw-pw-box" class="form-group">
-          <label class="form-label">비밀번호 재확인</label>
-          <input class="form-input" type="password" placeholder="비밀번호 입력">
-        </div>
+        <div id="withdraw-email-err" style="display:none;color:var(--coral);font-size:12px;margin-bottom:10px">⚠️ 이메일이 올바르지 않습니다.</div>
         <button style="width:100%;padding:11px;border-radius:var(--r);background:var(--coral);color:#fff;border:none;cursor:pointer;font-size:13px;font-weight:700"
-                onclick="if(confirm('정말 탈퇴하시겠습니까?'))toast('탈퇴 완료')">회원 탈퇴</button>
+                onclick="doWithdraw()">회원 탈퇴</button>
       </div>
+    </div>
+  </div>
+</div>
+
+<!-- 회원 탈퇴 확인 모달 -->
+<div id="withdraw-confirm-modal"
+     style="display:none;position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,0.45);align-items:center;justify-content:center;backdrop-filter:blur(3px)"
+     onclick="if(event.target===this)closeWithdrawModal()">
+  <div style="background:#fff;border-radius:18px;width:380px;max-width:calc(100vw - 32px);padding:28px 24px">
+    <h3 style="margin:0 0 12px;font-size:17px;color:#7F1D1D">⚠️ 정말 탈퇴하시겠습니까?</h3>
+    <div style="background:#FEF3F2;border:1px solid #FECACA;border-radius:9px;padding:14px;margin-bottom:20px;font-size:13px;color:#7F1D1D;line-height:1.9">
+      • 탈퇴 즉시 모든 개인정보가 삭제됩니다.<br>
+      • 탈퇴 후 복구는 불가능합니다.<br>
+      • 작성한 후기는 '탈퇴한 사용자'로 표시됩니다.
+    </div>
+    <div style="display:flex;gap:8px">
+      <button onclick="confirmWithdraw()"
+              style="flex:1;padding:11px;border-radius:var(--r);background:var(--coral);color:#fff;border:none;cursor:pointer;font-size:13px;font-weight:700">탈퇴 확인</button>
+      <button onclick="closeWithdrawModal()"
+              style="flex:1;padding:11px;border-radius:var(--r);background:var(--cream2);color:var(--text2);border:1px solid var(--border);cursor:pointer;font-size:13px;font-weight:700">취소</button>
     </div>
   </div>
 </div>

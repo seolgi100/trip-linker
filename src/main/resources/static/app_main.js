@@ -628,7 +628,39 @@ async function saveInfoEdit() {
 }
 
 /* ───────────────────────────────────────────────
- * 8. 알림 (GET /api/notifications)
+ * 8. 회원 탈퇴 (DELETE /api/users/me)
+ * ─────────────────────────────────────────────── */
+function doWithdraw() {
+  if (!_currentUser) { toast('로그인이 필요합니다'); return; }
+  const input = document.getElementById('withdrawEmailInput');
+  const email = input?.value.trim();
+  if (!email) { toast('이메일을 입력해주세요'); return; }
+  const errEl = document.getElementById('withdraw-email-err');
+  if (email.toLowerCase() !== (_currentUser.email || '').toLowerCase()) {
+    if (errEl) errEl.style.display = 'block';
+    return;
+  }
+  if (errEl) errEl.style.display = 'none';
+  document.getElementById('withdraw-confirm-modal').style.display = 'flex';
+}
+
+async function confirmWithdraw() {
+  closeWithdrawModal();
+  const res = await api.del('/api/users/me');
+  if (!res.success) {
+    toast('⚠️ ' + (res.message || '탈퇴 처리 중 오류가 발생했습니다.'));
+    return;
+  }
+  toast('탈퇴가 완료되었습니다.');
+  doLogout();
+}
+
+function closeWithdrawModal() {
+  document.getElementById('withdraw-confirm-modal').style.display = 'none';
+}
+
+/* ───────────────────────────────────────────────
+ * 9. 알림 (GET /api/notifications)
  * ─────────────────────────────────────────────── */
 
 async function _loadNotifications() {
@@ -1524,15 +1556,10 @@ function showMySection(key, btn) {
         }
     }
     if (key === 'withdraw') {
-        const pwb = document.getElementById('withdraw-pw-box');
-        const sob = document.getElementById('withdraw-social-box');
-        if (_currentUser?.social) {
-            if (pwb) pwb.style.display = 'none';
-            if (sob) sob.style.display = 'block';
-        } else {
-            if (pwb) pwb.style.display = 'block';
-            if (sob) sob.style.display = 'none';
-        }
+        const inp = document.getElementById('withdrawEmailInput');
+        if (inp) inp.value = '';
+        const err = document.getElementById('withdraw-email-err');
+        if (err) err.style.display = 'none';
     }
     if (key === 'ledger')      updateLedgerList();
     if (key === 'scrap-stay')  loadMyScrap('stay');

@@ -47,11 +47,12 @@ public class UserController {
         return ResponseEntity.ok("닉네임이 성공적으로 변경되었습니다.");
     }
 
-    // 3. 회원 탈퇴 (DELETE) - 유저의 계정 상태를 논리 삭제(INACTIVE) 처리합니다.
-    @DeleteMapping("/{userId}")
-    public ResponseEntity<String> withdraw(@PathVariable Long userId) {
-        userService.withdraw(userId);
-        return ResponseEntity.ok("회원 탈퇴가 완료되었습니다.");
+    // 3. 회원 탈퇴 (DELETE /api/users/me) - 개인정보 마스킹 + 토큰 즉시 삭제
+    @DeleteMapping("/me")
+    public ResponseEntity<ApiResponse<Void>> withdrawMe(
+            @AuthenticationPrincipal CustomUserDetails userDetails) {
+        userService.withdraw(userDetails.getUser().getId());
+        return ResponseEntity.ok(ApiResponse.success("회원 탈퇴가 완료되었습니다.", null));
     }
 
     // 4. 현재 비밀번호 검증 (POST /api/users/me/verify-password)
