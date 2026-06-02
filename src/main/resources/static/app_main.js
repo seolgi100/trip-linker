@@ -492,22 +492,6 @@ function returnToMyLedger() {
 /* ───────────────────────────────────────────────
  * 7. 회원정보 수정 (PATCH /api/users/me)
  * ─────────────────────────────────────────────── */
-function showMySection(sec, btn) {
-  ['trips','reviews','likes','scrap-stay','scrap-food','ledger','info','withdraw'].forEach(s => {
-    const e = document.getElementById('my-' + s);
-    if (e) e.style.display = 'none';
-  });
-  const t = document.getElementById('my-' + sec);
-  if (t) t.style.display = 'block';
-  btn.closest('.my-sidebar').querySelectorAll('.my-menu').forEach(b => b.classList.remove('on'));
-  btn.classList.add('on');
-  if (sec === 'info')     { resetInfoStep(); _currentUser?.social ? showSocialInfoEdit() : (() => { document.getElementById('info-social-notice').style.display='none'; document.getElementById('info-pw-form').style.display='block'; })(); }
-  if (sec === 'withdraw') { const pwb=document.getElementById('withdraw-pw-box'), sob=document.getElementById('withdraw-social-box'); if(_currentUser?.social){ if(pwb) pwb.style.display='none'; if(sob) sob.style.display='block'; } else { if(pwb) pwb.style.display='block'; if(sob) sob.style.display='none'; } }
-  if (sec === 'ledger')      updateLedgerList();
-  if (sec === 'scrap-stay')  loadMyScrap('stay');
-  if (sec === 'scrap-food')  loadMyScrap('food');
-}
-
 function resetInfoStep() {
   const s1=document.getElementById('info-pw-step'), s2=document.getElementById('info-edit-form');
   if(s1) s1.style.display='block'; if(s2) s2.style.display='none';
@@ -1463,4 +1447,30 @@ function showMySection(key, btn) {
   if (target) target.style.display = '';
   document.querySelectorAll('.my-menu').forEach(b => b.classList.remove('on'));
   if (btn) btn.classList.add('on');
+
+  if (key === 'info') {
+    resetInfoStep();
+    if (_currentUser?.social) {
+      showSocialInfoEdit();
+    } else {
+      document.getElementById('info-social-notice').style.display = 'none';
+      document.getElementById('info-pw-form').style.display = 'block';
+    }
+  }
+  if (key === 'withdraw') {
+    const pwb = document.getElementById('withdraw-pw-box');
+    const sob = document.getElementById('withdraw-social-box');
+    if (_currentUser?.social) {
+      if (pwb) pwb.style.display = 'none';
+      if (sob) sob.style.display = 'block';
+    } else {
+      if (pwb) pwb.style.display = 'block';
+      if (sob) sob.style.display = 'none';
+    }
+  }
+  if (key === 'ledger')      updateLedgerList();
+  if (key === 'scrap-stay')  loadMyScrap('stay');
+  if (key === 'scrap-food')  loadMyScrap('food');
+  if (key === 'scrap-tour')  loadMyScrap('tour');
+  if (key === 'scrap-cafe')  loadMyScrap('cafe');
 }
