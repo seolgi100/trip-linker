@@ -70,7 +70,7 @@ public class AuthController {
     @PostMapping("/logout")
     public ResponseEntity<Void> logout(@AuthenticationPrincipal CustomUserDetails userDetails) {
         if (userDetails != null) {
-            authService.logout(userDetails.getUser().getId());
+            authService.logout(userDetails.getUserId());
         }
         return ResponseEntity.ok().build();
     }
