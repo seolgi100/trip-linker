@@ -68,7 +68,7 @@ public class Post {
         this.title = title;
         this.content = content;
         this.styleTags = styleTags;
-        this.status = status;
+        this.status = status != null ? status : "ACTIVE";
         this.isPublic = isPublic;
     }
 

@@ -10,7 +10,7 @@ import java.util.List;
 
 public interface PostLikeRepository extends JpaRepository<PostLike, Long> {
 
-    @Query("SELECT pl.post FROM PostLike pl JOIN FETCH pl.post p " +
+    @Query("SELECT pl.post FROM PostLike pl JOIN pl.post p " +
             "WHERE pl.user.id = :userId AND p.status = 'ACTIVE' " +
             "ORDER BY pl.id DESC")
     List<Post> findLikedPostsByUserId(@Param("userId") Long userId);
