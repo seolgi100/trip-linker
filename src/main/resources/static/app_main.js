@@ -121,6 +121,7 @@ let _loginLockTimer = null;
  * 3. NAV 라우팅
  * ─────────────────────────────────────────────── */
 function go(id, addToHistory) {
+  sessionStorage.setItem('currentPage', id);
   if (addToHistory !== false && id !== 'main') history.pushState({page: id}, '', location.href);
   document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
   const pg = document.getElementById('page-' + id);
@@ -384,7 +385,8 @@ async function updateMyPageUI() {
   _myTrips = (tripsRes.success && tripsRes.data) ? tripsRes.data : [];
 
   _renderMyTrips(_myTrips);
-  _renderMyReviews();   // 후기는 커뮤니티 API로 처리
+  _renderMyReviews();
+  _renderMyLikedPosts();
   updateLedgerList();
 }
 
@@ -406,13 +408,48 @@ function _renderMyTrips(trips) {
   );
 }
 
+function _renderMyLikedPosts() {
+  const listEl = document.getElementById('my-likes-list');
+  if (!listEl) return;
+  listEl.innerHTML = '<div style="color:var(--text3);font-size:13px;padding:20px 0;text-align:center">불러오는 중...</div>';
+  apiCall('/api/users/me/liked-posts').then(res => {
+    const liked = res.data ?? [];
+    if (liked.length === 0) {
+      listEl.innerHTML = '<p style="color:var(--text3);font-size:13px">좋아요한 후기가 없습니다.</p>';
+      return;
+    }
+    listEl.innerHTML = liked.map(r => `
+      <div class="post-card"><span class="post-cat ${r.catClass}">${r.catLabel}</span>
+        <div class="post-ttl" style="margin-top:5px">${r.title}</div>
+        <div class="post-stats"><span class="post-stat">❤️ ${r.likes}</span>${r.views ? `<span class="post-stat">👁 ${r.views}</span>` : ''}</div>
+      </div>
+    `).join('');
+  });
+}
+
 function _renderMyReviews() {
-  // 작성한 후기: GET /api/posts?author=me 형태가 없으면 커뮤니티 탭에서 관리
-  // 여기서는 빈 상태 렌더링 후 커뮤니티 도메인에서 채움
-  const re = document.getElementById('my-reviews');
-  if (!re) return;
-  re.innerHTML = '<h3 class="my-sec-ttl">작성한 후기</h3>'
-      + '<div style="color:var(--text3);font-size:13px;padding:20px 0;text-align:center">후기를 불러오는 중...</div>';
+  const listEl = document.getElementById('my-reviews-list');
+  if (!listEl) return;
+  listEl.innerHTML = '<div style="color:var(--text3);font-size:13px;padding:20px 0;text-align:center">후기를 불러오는 중...</div>';
+  apiCall('/api/users/me/posts').then(res => {
+    const posts = res.data ?? [];
+    if (posts.length === 0) {
+      listEl.innerHTML = '<p style="color:var(--text3);font-size:13px">작성한 후기가 없습니다.</p>';
+      return;
+    }
+    listEl.innerHTML = posts.map(r => `
+      <div class="post-card"><span class="post-cat ${r.catClass}">${r.catLabel}</span>
+        <div class="post-ttl" style="margin-top:5px">${r.title}</div>
+        <div class="post-foot">
+          <div class="post-stats"><span class="post-stat">❤️ ${r.likes}</span>${r.views ? `<span class="post-stat">👁 ${r.views}</span>` : ''}</div>
+          <div style="display:flex;gap:6px">
+            <button class="btn-scrap" onclick="event.stopPropagation();go('edit-review')">✏️ 수정</button>
+            <button class="btn-scrap" style="color:var(--coral);border-color:var(--coral)" onclick="event.stopPropagation();if(confirm('삭제?'))toast('삭제 완료')">삭제</button>
+          </div>
+        </div>
+      </div>
+    `).join('');
+  });
 }
 
 /* ───────────────────────────────────────────────
@@ -1551,6 +1588,13 @@ window.addEventListener('popstate', e => {
     }
   }
   updateNav();
+
+  // 새로고침 시 이전 페이지 복원
+  const savedPage = sessionStorage.getItem('currentPage');
+  if (savedPage && savedPage !== 'main') go(savedPage, false);
+
+  // 초기화 완료 후 화면 노출 (flash 방지)
+  document.body.style.visibility = 'visible';
 })();
 
 function showMySection(key, btn) {

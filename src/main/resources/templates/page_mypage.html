@@ -27,16 +27,8 @@
     { action: "go('map')", icon: "🏙️", title: "부산 2박3일 가성비 투어", meta: "2025.04.22~04.24 · 4인 · 대중교통 · 공개", budget: "₩280,000" }
   ];
 
-  // 3. 작성한 후기 데이터
-  const MOCK_MYPAGE_REVIEWS = [
-    { action: "go('review')", catLabel: "여행 경로", catClass: "cat-route", title: "제주 해안선 드라이브 완벽 코스", likes: "142", views: "2,804" }
-  ];
-
-  // 4. 좋아요한 후기 데이터
-  const MOCK_MYPAGE_LIKES = [
-    { action: "go('review')", catLabel: "맛집", catClass: "cat-food", title: "강릉 현지인 추천 커피 로드 TOP 10", likes: "891", views: "12,301" },
-    { action: "go('review')", catLabel: "여행 경로", catClass: "cat-route", title: "남해 다랭이마을 2박 3일 완벽 가이드", likes: "654", views: null }
-  ];
+  // 3. 작성한 후기 데이터 → API 연동으로 대체
+  // 4. 좋아요한 후기 데이터 → API 연동으로 대체
 
   // 5. 스크랩한 숙소 데이터
   const MOCK_MYPAGE_SCRAP_STAY = [
@@ -105,35 +97,8 @@
     `).join('');
     }
 
-    // 3. 작성한 후기 렌더링
-    let reviews = typeof MOCK_MYPAGE_REVIEWS !== 'undefined' ? MOCK_MYPAGE_REVIEWS : [];
-    const reviewsContainer = document.getElementById("my-reviews-list");
-    if (reviewsContainer && reviews.length > 0) {
-      reviewsContainer.innerHTML = reviews.map(r => `
-      <div class="post-card" onclick="${r.action}"><span class="post-cat ${r.catClass}">${r.catLabel}</span>
-        <div class="post-ttl" style="margin-top:5px">${r.title}</div>
-        <div class="post-foot">
-          <div class="post-stats"><span class="post-stat">❤️ ${r.likes}</span>${r.views ? `<span class="post-stat">👁 ${r.views}</span>` : ''}</div>
-          <div style="display:flex;gap:6px">
-            <button class="btn-scrap" onclick="event.stopPropagation();go('edit-review')">✏️ 수정</button>
-            <button class="btn-scrap" style="color:var(--coral);border-color:var(--coral)" onclick="event.stopPropagation();if(confirm('삭제?'))toast('삭제 완료')">삭제</button>
-          </div>
-        </div>
-      </div>
-    `).join('');
-    }
-
-    // 4. 좋아요한 후기 렌더링
-    let likes = typeof MOCK_MYPAGE_LIKES !== 'undefined' ? MOCK_MYPAGE_LIKES : [];
-    const likesContainer = document.getElementById("my-likes-list");
-    if (likesContainer && likes.length > 0) {
-      likesContainer.innerHTML = likes.map(r => `
-      <div class="post-card" onclick="${r.action}"><span class="post-cat ${r.catClass}">${r.catLabel}</span>
-        <div class="post-ttl" style="margin-top:5px">${r.title}</div>
-        <div class="post-stats"><span class="post-stat">❤️ ${r.likes}</span>${r.views ? `<span class="post-stat">👁 ${r.views}</span>` : ''}</div>
-      </div>
-    `).join('');
-    }
+    // 3. 작성한 후기 렌더링 → app_main.js의 _renderMyReviews()가 처리
+    // 4. 좋아요한 후기 렌더링 → app_main.js의 updateMyPageUI()가 처리
 
     // 5. 스크랩한 숙소 렌더링
     let scrapStay = typeof MOCK_MYPAGE_SCRAP_STAY !== 'undefined' ? MOCK_MYPAGE_SCRAP_STAY : [];
