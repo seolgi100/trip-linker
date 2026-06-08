@@ -36,7 +36,7 @@ public class UserServiceImpl implements UserService { // 인터페이스 구현
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new IllegalArgumentException("해당 유저를 찾을 수 없습니다. ID: " + userId));
 
-        boolean isSocial = oAuthAccountRepository.findByUserId(userId).isPresent();
+        boolean isSocial = oAuthAccountRepository.existsByUserId(userId);
 
         return new UserInfoResponseDto(user, isSocial);
     }

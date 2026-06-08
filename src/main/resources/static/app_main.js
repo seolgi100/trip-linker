@@ -186,8 +186,9 @@ function go(id, addToHistory) {
   if (id === 'weather' && typeof window.renderWeatherTab === 'function') {
     setTimeout(window.renderWeatherTab, 30);
   }
-  if (id === 'planner' && typeof initPlannerDateConstraints === 'function') {
-    setTimeout(initPlannerDateConstraints, 100);
+  if (id === 'planner') {
+    if (typeof initPlannerDateConstraints === 'function') setTimeout(initPlannerDateConstraints, 100);
+    if (typeof initPlannerMBTI === 'function') setTimeout(initPlannerMBTI, 100);
   }
   if (id === 'map') {
     setTimeout(function() {
@@ -400,7 +401,7 @@ function startKakaoSignup() {
  * 5. 마이페이지 (User Domain + Plan Domain)
  * ─────────────────────────────────────────────── */
 
-/** GET /api/users/me + GET /api/trips */
+/** GET /api/trips + GET /api/users/me/posts + GET /api/users/me/liked-posts 병렬 호출 */
 async function updateMyPageUI() {
   if (!_currentUser) return;
 
@@ -411,13 +412,14 @@ async function updateMyPageUI() {
   if (nm) nm.textContent = _currentUser.name  || '';
   if (em) em.textContent = _currentUser.email || '';
 
-  // 여행 기록
-  const tripsRes = await api.get('/api/trips');
+  const [tripsRes] = await Promise.all([
+    api.get('/api/trips'),
+    _renderMyReviews(),
+    _renderMyLikedPosts(),
+  ]);
   _myTrips = (tripsRes.success && tripsRes.data) ? tripsRes.data : [];
 
   _renderMyTrips(_myTrips);
-  _renderMyReviews();       // [v2] 수정/삭제 버튼 포함
-  _renderMyLikedPosts();    // [v2] 좋아요한 포스트 렌더링
   updateLedgerList();
 }
 
@@ -440,49 +442,47 @@ function _renderMyTrips(trips) {
 }
 
 /** [v2] GET /api/users/me/posts → 작성한 후기 */
-function _renderMyReviews() {
+async function _renderMyReviews() {
   const listEl = document.getElementById('my-reviews-list');
   if (!listEl) return;
   listEl.innerHTML = '<div style="color:var(--text3);font-size:13px;padding:20px 0;text-align:center">후기를 불러오는 중...</div>';
-  apiCall('/api/users/me/posts').then(res => {
-    const posts = res.data ?? [];
-    if (posts.length === 0) {
-      listEl.innerHTML = '<p style="color:var(--text3);font-size:13px">작성한 후기가 없습니다.</p>';
-      return;
-    }
-    listEl.innerHTML = posts.map(r => `
-      <div class="post-card"><span class="post-cat ${r.catClass}">${r.catLabel}</span>
-        <div class="post-ttl" style="margin-top:5px">${r.title}</div>
-        <div class="post-foot">
-          <div class="post-stats"><span class="post-stat">❤️ ${r.likes}</span>${r.views ? `<span class="post-stat">👁 ${r.views}</span>` : ''}</div>
-          <div style="display:flex;gap:6px">
-            <button class="btn-scrap" onclick="event.stopPropagation();go('edit-review')">✏️ 수정</button>
-            <button class="btn-scrap" style="color:var(--coral);border-color:var(--coral)" onclick="event.stopPropagation();if(confirm('삭제?'))toast('삭제 완료')">삭제</button>
-          </div>
+  const res = await apiCall('/api/users/me/posts');
+  const posts = res.data ?? [];
+  if (posts.length === 0) {
+    listEl.innerHTML = '<p style="color:var(--text3);font-size:13px">작성한 후기가 없습니다.</p>';
+    return;
+  }
+  listEl.innerHTML = posts.map(r => `
+    <div class="post-card"><span class="post-cat ${r.catClass}">${r.catLabel}</span>
+      <div class="post-ttl" style="margin-top:5px">${r.title}</div>
+      <div class="post-foot">
+        <div class="post-stats"><span class="post-stat">❤️ ${r.likes}</span>${r.views ? `<span class="post-stat">👁 ${r.views}</span>` : ''}</div>
+        <div style="display:flex;gap:6px">
+          <button class="btn-scrap" onclick="event.stopPropagation();go('edit-review')">✏️ 수정</button>
+          <button class="btn-scrap" style="color:var(--coral);border-color:var(--coral)" onclick="event.stopPropagation();if(confirm('삭제?'))toast('삭제 완료')">삭제</button>
         </div>
       </div>
-    `).join('');
-  });
+    </div>
+  `).join('');
 }
 
 /** [v2] GET /api/users/me/liked-posts → 좋아요한 후기 */
-function _renderMyLikedPosts() {
+async function _renderMyLikedPosts() {
   const listEl = document.getElementById('my-likes-list');
   if (!listEl) return;
   listEl.innerHTML = '<div style="color:var(--text3);font-size:13px;padding:20px 0;text-align:center">불러오는 중...</div>';
-  apiCall('/api/users/me/liked-posts').then(res => {
-    const liked = res.data ?? [];
-    if (liked.length === 0) {
-      listEl.innerHTML = '<p style="color:var(--text3);font-size:13px">좋아요한 후기가 없습니다.</p>';
-      return;
-    }
-    listEl.innerHTML = liked.map(r => `
-      <div class="post-card"><span class="post-cat ${r.catClass}">${r.catLabel}</span>
-        <div class="post-ttl" style="margin-top:5px">${r.title}</div>
-        <div class="post-stats"><span class="post-stat">❤️ ${r.likes}</span>${r.views ? `<span class="post-stat">👁 ${r.views}</span>` : ''}</div>
-      </div>
-    `).join('');
-  });
+  const res = await apiCall('/api/users/me/liked-posts');
+  const liked = res.data ?? [];
+  if (liked.length === 0) {
+    listEl.innerHTML = '<p style="color:var(--text3);font-size:13px">좋아요한 후기가 없습니다.</p>';
+    return;
+  }
+  listEl.innerHTML = liked.map(r => `
+    <div class="post-card"><span class="post-cat ${r.catClass}">${r.catLabel}</span>
+      <div class="post-ttl" style="margin-top:5px">${r.title}</div>
+      <div class="post-stats"><span class="post-stat">❤️ ${r.likes}</span>${r.views ? `<span class="post-stat">👁 ${r.views}</span>` : ''}</div>
+    </div>
+  `).join('');
 }
 
 /* ───────────────────────────────────────────────
