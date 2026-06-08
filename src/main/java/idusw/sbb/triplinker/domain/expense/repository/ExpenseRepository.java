@@ -10,6 +10,5 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import java.util.List;
 
 public interface ExpenseRepository extends JpaRepository<Expense, Long> {
-    List<Expense> findByUserIdAndCategory(Long userId, String category);
-    List<Expense> findByUserId(Long userId);    // 가계부 전체조회 메서드
+    List<Expense> findByPlanId(Long planId);
 }
