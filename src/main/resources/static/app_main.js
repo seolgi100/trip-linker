@@ -180,6 +180,15 @@ function go(id, addToHistory) {
   if (id === 'planner' && typeof initPlannerDateConstraints === 'function') {
     setTimeout(initPlannerDateConstraints, 100);
   }
+  if (id === 'map') {
+    setTimeout(function() {
+      if (window._kakaoMap) {
+        window._kakaoMap.relayout();
+      } else if (typeof initKakaoMap === 'function') {
+        initKakaoMap();
+      }
+    }, 100);
+  }
 }
 
 function setNav(btn) {
@@ -1201,6 +1210,16 @@ function showDay(day, btn) {
     if(day==='all') s.style.display='block';
     else s.style.display = (s.dataset.day==day)?'block':'none';
   });
+  if (window._kakaoOverlays && window._kakaoMap) {
+    window._kakaoOverlays.forEach(o => {
+      o.overlay.setMap((day === 'all' || o.day == day) ? window._kakaoMap : null);
+    });
+  }
+  if (window._kakaoPolylines) {
+    window._kakaoPolylines.forEach(p => {
+      p.line.setMap((day === 'all' || p.day == day) ? window._kakaoMap : null);
+    });
+  }
 }
 function switchMapTab(tab, btn) {
   document.querySelectorAll('.btn-map-act').forEach(b => b.classList.remove('on'));
@@ -1212,8 +1231,14 @@ function switchMapTab(tab, btn) {
 function toggleMarker(btn, type) {
   btn.classList.toggle('on');
   const isOn = btn.classList.contains('on');
-  document.querySelectorAll('.map-pin[data-type="'+type+'"]').forEach(p => p.style.display=isOn?'flex':'none');
-  toast((isOn?'✅ 표시':'❌ 숨김') + ' · ' + btn.textContent.trim().replace(/[🏨🍽️📍]/g,'').trim());
+  if (window._kakaoOverlays && window._kakaoMap) {
+    window._kakaoOverlays.filter(o => o.type === type).forEach(o => {
+      o.overlay.setMap(isOn ? window._kakaoMap : null);
+    });
+  } else {
+    document.querySelectorAll('.map-pin[data-type="'+type+'"]').forEach(p => p.style.display=isOn?'flex':'none');
+  }
+  toast((isOn?'✅ 표시':'❌ 숨김') + ' · ' + btn.textContent.trim().replace(/[🏨🍽️📍☕\s]/g,''));
 }
 
 /* ───────────────────────────────────────────────

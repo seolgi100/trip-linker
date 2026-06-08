@@ -1,5 +1,7 @@
 spring.application.name=trip-linker
 
+spring.profiles.active=local
+
 spring.datasource.driver-class-name=org.mariadb.jdbc.Driver
 spring.datasource.url=jdbc:mariadb://localhost:3306/triplinker
 spring.datasource.username=DB_USERNAME
@@ -46,3 +48,6 @@ spring.mail.username=your_email@gmail.com
 spring.mail.password=your_email_app_password
 spring.mail.properties.mail.smtp.auth=true
 spring.mail.properties.mail.smtp.starttls.enable=true
+
+# Kakao Maps JavaScript API
+kakao.maps.api.key=YOUR_KAKAO_JS_KEY
