@@ -57,7 +57,7 @@ const MAP_ITINERARY = [
   {
     day: 3, label: '📅 Day 3 · 06/16 (월)', budget: '₩76,000',
     places: [
-      { type: 'tour',  icon: '📍', name: '천지연폭포',           sub: '관광지 · 1h · ₩2,000×2', stars: '★★★★☆ 4.6',           time: '10:00', key: '천지연',   replacePh: '교체 요구사항 입력' },
+      { type: 'tour',  icon: '📍', name: '천지연폭포',           sub: '관광지 · 1h · ₩2,000×2', stars: '★★★★☆ 4.6',           time: '10:00', key: '천지연폭포',   replacePh: '교체 요구사항 입력' },
       { transit: '🚗 자차 · 5km · 약 10분' },
       { type: 'food',  icon: '🍽️', name: '올레시장 순대국',       sub: '맛집 · 점심 · ₩8,000×2', stars: '★★★★☆ 4.4',           time: '12:00', key: '올레시장순대국-3',  replacePh: '교체 요구사항 입력' },
     ],
@@ -155,7 +155,7 @@ function initMapPage() {
         ${day.places.map(p => p.transit
           ? `<div class="transit-map-row">${p.transit}</div>`
           : `
-          <div class="place-row">
+          <div class="place-row" data-key="${p.key}">
             <div class="pr-drag">⋮⋮</div>
             <div class="pr-icon pr-${p.type}">${p.icon}</div>
             <div class="pr-info" style="cursor:pointer" onclick="showMapPlacePopup('${p.key}','${p.type}')">
@@ -176,6 +176,7 @@ function initMapPage() {
         ).join('')}
       </div>`).join('') +
       `<div class="recalc-bar" id="recalcBar" style="display:none">🔄 경로 재계산 중... (route_recalc_needed = 1)</div>`;
+    initDragAndDrop();
   }
 
   // 총 예산
@@ -300,6 +301,87 @@ function initKakaoMap() {
   });
 }
 
+// ── Day 필터 변경 시 해당 마커만 보이도록 setBounds ──
+function updateBoundsForDay(day) {
+  if (!window._kakaoMap) return;
+  var pins = (day === 'all') ? MAP_PINS : MAP_PINS.filter(function(p) { return p.day == day; });
+  if (!pins.length) return;
+  var bounds = new kakao.maps.LatLngBounds();
+  pins.forEach(function(p) { bounds.extend(new kakao.maps.LatLng(p.lat, p.lng)); });
+  window._kakaoMap.setBounds(bounds);
+}
+
+// ── 드래그 후 해당 Day 동선 다시 그리기 ──
+function redrawDayRoute(dayNum) {
+  if (!window._kakaoMap || !window._kakaoPolylines) return;
+  window._kakaoPolylines.forEach(function(p) { if (p.day == dayNum) p.line.setMap(null); });
+  window._kakaoPolylines = window._kakaoPolylines.filter(function(p) { return p.day != dayNum; });
+
+  var pinByKey = {};
+  MAP_PINS.forEach(function(p) { pinByKey[p.key] = p; });
+
+  var section = document.querySelector('.day-section[data-day="' + dayNum + '"]');
+  if (!section) return;
+  var keys = Array.from(section.querySelectorAll('.place-row[data-key]')).map(function(r) { return r.dataset.key; });
+  var route = DAY_ROUTES.find(function(r) { return r.day == dayNum; });
+
+  var path = keys.map(function(k) {
+    var p = pinByKey[k]; return p ? new kakao.maps.LatLng(p.lat, p.lng) : null;
+  }).filter(Boolean);
+  if (path.length < 2) return;
+
+  var polyline = new kakao.maps.Polyline({
+    path: path, strokeWeight: 3,
+    strokeColor: route ? route.color : '#2D9E8A',
+    strokeOpacity: 0.8, strokeStyle: 'dashed'
+  });
+  polyline.setMap(window._kakaoMap);
+  window._kakaoPolylines.push({ day: dayNum, line: polyline });
+}
+
+// ── 드래그 재정렬 초기화 ──
+function initDragAndDrop() {
+  var dragSrc = null;
+  document.querySelectorAll('.place-row[data-key]').forEach(function(row) {
+    row.setAttribute('draggable', 'true');
+
+    row.addEventListener('dragstart', function() {
+      dragSrc = this;
+      setTimeout(function() { row.style.opacity = '0.4'; }, 0);
+    });
+    row.addEventListener('dragend', function() {
+      this.style.opacity = '1';
+      document.querySelectorAll('.place-row[data-key]').forEach(function(r) { r.style.outline = ''; });
+    });
+    row.addEventListener('dragover', function(e) { e.preventDefault(); });
+    row.addEventListener('dragenter', function() {
+      if (dragSrc !== this) this.style.outline = '2px dashed var(--sage)';
+    });
+    row.addEventListener('dragleave', function() { this.style.outline = ''; });
+    row.addEventListener('drop', function(e) {
+      e.preventDefault(); e.stopPropagation();
+      this.style.outline = '';
+      if (!dragSrc || dragSrc === this) return;
+
+      var srcSection = dragSrc.closest('.day-section');
+      var tgtSection = this.closest('.day-section');
+      if (srcSection !== tgtSection) { toast('같은 날 안에서만 순서를 바꿀 수 있어요.'); return; }
+
+      // 내용과 key를 맞교환 (replace-area는 그대로 유지)
+      var tmpHtml = dragSrc.innerHTML; dragSrc.innerHTML = this.innerHTML; this.innerHTML = tmpHtml;
+      var tmpKey  = dragSrc.dataset.key; dragSrc.dataset.key = this.dataset.key; this.dataset.key = tmpKey;
+
+      redrawDayRoute(parseInt(tgtSection.dataset.day));
+      toast('순서가 변경됐습니다.');
+    });
+  });
+}
+
+// ── 카카오맵 길찾기 ──
+function openKakaoNavi(name, lat, lng) {
+  window.open('https://map.kakao.com/link/to/' + encodeURIComponent(name) + ',' + lat + ',' + lng, '_blank');
+}
+
 // ── 지도 장소 후기 데이터 ──
 const PLACE_REVIEWS = {
   '신라호텔': { name:'제주신라호텔', type:'🏨 숙소', mapSearch:'제주신라호텔', reviews:[
@@ -330,11 +412,23 @@ const PLACE_REVIEWS = {
 
 function showMapPlacePopup(key, type) {
   var data = PLACE_REVIEWS[key];
+  var pin  = MAP_PINS.find(function(p) { return p.key === key; });
   var modal = document.getElementById('mapPlaceModal');
   if (!modal) return;
   var tl = type==='stay'?'🏨 숙소':type==='food'?'🍽️ 맛집':type==='cafe'?'☕ 카페':'📍 관광지';
   document.getElementById('mpPlace').textContent = data ? data.name : key;
   document.getElementById('mpType').textContent  = data ? data.type : tl;
+
+  // 길찾기 버튼
+  var naviEl = document.getElementById('mpNavi');
+  if (naviEl) {
+    naviEl.innerHTML = pin
+      ? '<button onclick="openKakaoNavi(\'' + (data ? data.name : key) + '\',' + pin.lat + ',' + pin.lng + ')" '
+        + 'style="width:100%;padding:10px;border-radius:9px;background:#FEE500;color:#3C1E1E;border:none;'
+        + 'cursor:pointer;font-size:13px;font-weight:700;margin-bottom:12px">🚗 카카오맵으로 길찾기</button>'
+      : '';
+  }
+
   if (!data) {
     document.getElementById('mpReviews').innerHTML = '<div style="text-align:center;padding:20px;color:var(--text3)">아직 후기가 없습니다.</div>';
     document.getElementById('mpLinks').innerHTML = getMapLinks(key);
@@ -476,6 +570,7 @@ function showReviewDetail(place, type, stars, text) {
       <button class="modal-x" onclick="document.getElementById('mapPlaceModal').classList.remove('open')">✕</button>
     </div>
     <div class="modal-bd">
+      <div id="mpNavi"></div>
       <div id="mpReviews"></div>
       <div style="margin-top:16px;padding-top:14px;border-top:1px solid var(--border2)">
         <div style="font-size:12px;color:var(--text3);text-align:center;margin-bottom:10px">지도 앱에서 보기</div>

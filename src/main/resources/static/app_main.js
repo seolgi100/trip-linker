@@ -131,6 +131,15 @@ function go(id, addToHistory) {
   document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
   const pg = document.getElementById('page-' + id);
   if (pg) pg.classList.add('active');
+
+  if (id === 'map') {
+    setTimeout(function() {
+      if (window._kakaoMap) {
+        window._kakaoMap.relayout();
+        if (typeof updateBoundsForDay === 'function') updateBoundsForDay('all');
+      }
+    }, 100);
+  }
   document.querySelectorAll('.wf-item').forEach(b => b.classList.remove('on'));
   const map = {
     main: 0, signup: 1, 'signup-kakao': 1, login: 2, mypage: 3, planner: 4,
@@ -809,6 +818,19 @@ async function showMapPlacePopup(key, type) {
   document.getElementById('mpLinks').innerHTML = getMapLinks(key);
   modal.classList.add('open');
 
+  // 길찾기 버튼 (MAP_PINS 좌표 기반)
+  const naviEl = document.getElementById('mpNavi');
+  if (naviEl) {
+    const pin = (typeof MAP_PINS !== 'undefined') ? MAP_PINS.find(p => p.key === key) : null;
+    const displayName = (typeof PLACE_REVIEWS !== 'undefined' && PLACE_REVIEWS[key])
+      ? PLACE_REVIEWS[key].name : key;
+    naviEl.innerHTML = pin
+      ? `<a href="https://map.kakao.com/link/to/${encodeURIComponent(displayName)},${pin.lat},${pin.lng}" target="_blank"
+           style="display:block;width:100%;padding:10px;border-radius:9px;background:#FEE500;color:#3C1E1E;
+           text-decoration:none;text-align:center;font-size:13px;font-weight:700;margin-bottom:12px;box-sizing:border-box">🚗 카카오맵으로 길찾기</a>`
+      : '';
+  }
+
   const res = await api.get('/api/maps/places?keyword=' + encodeURIComponent(key));
   if (!res.success || !res.data || !res.data.length) {
     document.getElementById('mpReviews').innerHTML = '<div style="text-align:center;padding:20px;color:var(--text3)">아직 후기가 없습니다.</div>';
@@ -1220,6 +1242,7 @@ function showDay(day, btn) {
       p.line.setMap((day === 'all' || p.day == day) ? window._kakaoMap : null);
     });
   }
+  if (typeof updateBoundsForDay === 'function') updateBoundsForDay(day);
 }
 function switchMapTab(tab, btn) {
   document.querySelectorAll('.btn-map-act').forEach(b => b.classList.remove('on'));
