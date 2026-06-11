@@ -1,8 +1,3 @@
-/**
- * 가계부 지출 엔티티
- * - 사용자가 입력한 지출 내역을 EXPENSES 테이블에 저장한다.
- * - 금액, 카테고리, 지출일, 메모 정보를 관리한다.
- */
 package idusw.sbb.triplinker.domain.expense.entity;
 
 
@@ -15,6 +10,7 @@ import lombok.NoArgsConstructor;
 
 import java.time.LocalDate;
 
+//가계부 엔티티
 @Entity
 @Table(name = "EXPENSES")
 @Getter
@@ -27,7 +23,7 @@ public class Expense {
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "plan_id", nullable = false)
-    private TravelPlan planId;
+    private TravelPlan plan;
 
     @Column(nullable = false, length = 20)
     private String category; // STAY, FOOD, TOUR, CAFE
@@ -46,8 +42,8 @@ public class Expense {
     private LocalDate expenseDate;
 
     @Builder
-    public Expense(TravelPlan planId, String category, String description, Long amount, boolean isEstimated, LocalDate expenseDate) {
-        this.planId = planId;
+    public Expense(TravelPlan plan, String category, String description, Long amount, boolean isEstimated, LocalDate expenseDate) {
+        this.plan = plan;
         this.category = category;
         this.description = description;
         this.amount = amount;
