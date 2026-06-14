@@ -121,34 +121,34 @@ public class UserServiceImpl implements UserService { // 인터페이스 구현
         historyRepository.save(history); // UserServiceImpl에서는 이 이름이 맞습니다.
     }
 
-    //가계부 조회
+    //가계부 조회 (마이페이지용 — 사용자 전체 실제 지출 목록)
     @Override
     public BudgetReportResponseDto getMyExpenseReport(Long userId, String category) {
-        //category가 없으면 전체 가계부 조회, 있으면 해당 카테고리만 조회
         String dbCategory = category == null ? null : category.toUpperCase();
 
         List<Expense> expenseList = dbCategory == null
                 ? expenseRepository.findByUserId(userId)
                 : expenseRepository.findByUserIdAndCategory(userId, dbCategory);
 
-        //지출 금액을 모두 합산하여 총 지출 금액을 계산
-        Long total = expenseList.stream()
+        long totalAct = expenseList.stream()
+                .filter(e -> !e.isEstimated())
                 .mapToLong(Expense::getAmount)
                 .sum();
 
-        List<BudgetReportResponseDto.ExpenseDetailDto> details = expenseList.stream()
+        List<BudgetReportResponseDto.ExpenseDetailDto> actualDetails = expenseList.stream()
+                .filter(e -> !e.isEstimated())
                 .map(exp -> BudgetReportResponseDto.ExpenseDetailDto.builder()
                         .id(exp.getId())
+                        .category(exp.getCategory())
+                        .description(exp.getDescription())
                         .amount(exp.getAmount())
-                        .memo(exp.getDescription())
                         .date(exp.getExpenseDate().toString())
                         .build())
                 .collect(Collectors.toList());
 
         return BudgetReportResponseDto.builder()
-                .currentPageCategory(dbCategory)
-                .categoryTotalAmount(total)
-                .expenses(details)
+                .totalActualAmount(totalAct)
+                .actualExpenses(actualDetails)
                 .build();
     }
 
