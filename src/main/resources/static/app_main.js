@@ -112,6 +112,7 @@ let _userNotifs           = [];     // GET /api/notifications 응답의 data[]
 let _myTrips              = [];     // GET /api/trips 응답의 data[]
 let _chatSessionId        = null;   // POST /api/chat/sessions 응답의 data.sessionId
 let _budgetSelectedTripId = null;
+let _lastExpenseData      = null;
 let _activeTags           = new Set();
 let _loginFailCount       = 0;
 let _loginLockedUntil     = null;
@@ -585,11 +586,350 @@ async function goLedger2() {
   }
 }
 
-/** GET /api/trips/{tripId}/expenses */
+const _CATEGORY_MAP = {
+  STAY: { label: '숙박', color: 'var(--sage)' },
+  FOOD: { label: '식비', color: 'var(--coral)' },
+  TOUR: { label: '관광', color: '#F5A623' },
+  CAFE: { label: '카페', color: '#22B5C4' }
+};
+
+function _fmtWon(n) {
+  if (!n) return '₩0';
+  return '₩' + Number(n).toLocaleString();
+}
+
+/** GET /api/trips/{tripId}/expenses → 가계부 상세 화면 렌더링 */
 async function _loadExpenses(tripId) {
   const res = await api.get('/api/trips/' + tripId + '/expenses');
   if (!res.success) return;
-  console.log('[Expense] 지출 내역 로드 완료:', res.data);
+  const d = res.data;
+  _lastExpenseData = d;
+
+  const cats       = d.categoryBudgets  || [];
+  const actualExps = d.actualExpenses   || [];
+  const estExps    = d.estimatedExpenses || [];
+
+  // 여행 정보 헤더
+  const metaEl = document.getElementById('ledger-trip-meta');
+  if (metaEl && d.tripTitle) metaEl.textContent = d.tripTitle;
+  const destEl = document.getElementById('ledger-trip-dest');
+  if (destEl) destEl.textContent = [d.destination, (d.startDate && d.endDate) ? d.startDate + ' ~ ' + d.endDate : null].filter(Boolean).join(' · ');
+
+  // 미입력 카테고리 경고
+  const estCatSet  = new Set(estExps.map(e => e.category));
+  const actCatSet  = new Set(actualExps.map(e => e.category));
+  const missingCats = [...estCatSet].filter(c => !actCatSet.has(c));
+  const warnEl     = document.getElementById('ledger-warning');
+  const warnCatsEl = document.getElementById('ledger-warn-cats');
+  if (warnEl) {
+    if (missingCats.length > 0 && actualExps.length > 0) {
+      const labels = missingCats.map(c => (_CATEGORY_MAP[c] || { label: c }).label);
+      if (warnCatsEl) warnCatsEl.textContent = labels.join(', ');
+      warnEl.style.display = 'block';
+    } else {
+      warnEl.style.display = 'none';
+    }
+  }
+
+  // 요약 카드
+  const totalEl  = document.getElementById('ledger-total');
+  if (totalEl)  totalEl.textContent  = _fmtWon(d.totalEstimatedAmount);
+  const actualEl = document.getElementById('ledger-actual');
+  if (actualEl) actualEl.textContent = _fmtWon(d.totalActualAmount);
+  const statusEl = document.getElementById('ledger-status');
+  if (statusEl) {
+    const actual = d.totalActualAmount || 0;
+    const base   = d.budget || d.totalEstimatedAmount || 0;
+    if (base > 0) {
+      const remain = base - actual;
+      statusEl.textContent = remain >= 0 ? _fmtWon(remain) : '-' + _fmtWon(-remain);
+      statusEl.style.color = remain >= 0 ? 'var(--sage)' : 'var(--coral)';
+    } else {
+      statusEl.textContent = '-';
+    }
+  }
+
+  // ── 예상 파이 차트 ──
+  const estPieEl = document.getElementById('pie-estimated');
+  const estLegEl = document.getElementById('pie-est-legend');
+  if (cats.length > 0) {
+    const totalEst = d.totalEstimatedAmount || 1;
+    if (estLegEl) {
+      estLegEl.innerHTML = cats.map(c => {
+        const info = _CATEGORY_MAP[c.category] || { label: c.category, color: '#aaa' };
+        const pct  = Math.round((c.estimatedAmount || 0) / totalEst * 100) + '%';
+        return `<div class="pie-leg-item"><div class="pie-dot" style="background:${info.color}"></div>${info.label} ${pct}</div>`;
+      }).join('');
+    }
+    if (estPieEl) {
+      let deg = 0;
+      const segs = cats.map(c => {
+        const info  = _CATEGORY_MAP[c.category] || { color: '#aaa' };
+        const start = deg;
+        deg += ((c.estimatedAmount || 0) / totalEst) * 360;
+        return `${info.color} ${Math.round(start)}deg ${Math.round(deg)}deg`;
+      });
+      estPieEl.style.background = `conic-gradient(${segs.join(', ')})`;
+    }
+  }
+
+  // ── 실제 파이 차트 ──
+  const actPieEl  = document.getElementById('pie-actual');
+  const actLegEl  = document.getElementById('pie-act-legend');
+  const totalAct  = d.totalActualAmount || 0;
+  const actCats   = cats.filter(c => (c.actualAmount || 0) > 0);
+  if (totalAct > 0 && actCats.length > 0) {
+    if (actLegEl) {
+      actLegEl.innerHTML = actCats.map(c => {
+        const info = _CATEGORY_MAP[c.category] || { label: c.category, color: '#aaa' };
+        const pct  = Math.round((c.actualAmount || 0) / totalAct * 100) + '%';
+        return `<div class="pie-leg-item"><div class="pie-dot" style="background:${info.color}"></div>${info.label} ${pct}</div>`;
+      }).join('');
+    }
+    if (actPieEl) {
+      let deg = 0;
+      const segs = actCats.map(c => {
+        const info  = _CATEGORY_MAP[c.category] || { color: '#aaa' };
+        const start = deg;
+        deg += ((c.actualAmount || 0) / totalAct) * 360;
+        return `${info.color} ${Math.round(start)}deg ${Math.round(deg)}deg`;
+      });
+      actPieEl.style.background = `conic-gradient(${segs.join(', ')})`;
+    }
+  } else {
+    if (actPieEl) actPieEl.style.background = '#E5E7EB';
+    if (actLegEl) actLegEl.innerHTML = '<div class="pie-leg-item" style="color:var(--text3)">실제 지출 없음</div>';
+  }
+
+  // ── 카테고리별 비교 막대 ──
+  const maxAmt = Math.max(...cats.map(c => Math.max(c.estimatedAmount || 0, c.actualAmount || 0)), 1);
+  const listEl = document.getElementById('ledger-item-list');
+  if (listEl) {
+    if (cats.length === 0) {
+      listEl.innerHTML = '<div style="color:var(--text3);font-size:13px;padding:20px 0;text-align:center">AI 예상 비용 데이터가 없습니다.</div>';
+    } else {
+      listEl.innerHTML = cats.map(c => {
+        const info   = _CATEGORY_MAP[c.category] || { label: c.category, color: '#aaa' };
+        const estW   = Math.round((c.estimatedAmount || 0) / maxAmt * 100) + '%';
+        const actW   = Math.round((c.actualAmount   || 0) / maxAmt * 100) + '%';
+        const noAct  = (c.actualAmount || 0) === 0;
+        const isOver = !noAct && (c.actualAmount > c.estimatedAmount);
+        return `
+          <div style="margin-bottom:14px">
+            <div style="display:flex;justify-content:space-between;margin-bottom:4px;align-items:center">
+              <div class="bi-label">${info.label}${noAct ? ' <span style="font-size:10px;color:#9CA3AF;font-weight:400">미입력</span>' : ''}</div>
+              <div style="font-size:11px;color:var(--text3)">예상 ${_fmtWon(c.estimatedAmount)} / 실제 ${_fmtWon(c.actualAmount)}</div>
+            </div>
+            <div class="bi-bar-track" title="예상"><div class="bi-bar-fill" style="width:${estW};background:${info.color};opacity:.4"></div></div>
+            <div class="bi-bar-track" style="margin-top:3px" title="실제"><div class="bi-bar-fill" style="width:${actW};background:${info.color}"></div></div>
+            ${isOver ? `<div style="font-size:11px;color:var(--coral);margin-top:3px">⚠ ${_fmtWon(c.actualAmount - c.estimatedAmount)} 초과</div>` : ''}
+          </div>`;
+      }).join('');
+    }
+  }
+
+  // ── 실제 지출 상세 테이블 ──
+  const actTableEl = document.getElementById('ledger-act-table');
+  if (actTableEl) {
+    if (actualExps.length === 0) {
+      actTableEl.innerHTML = '<div style="color:var(--text3);font-size:12px;padding:12px 0">아직 입력된 실제 지출이 없습니다.</div>';
+    } else {
+      actTableEl.innerHTML = `
+        <table style="width:100%;border-collapse:collapse;font-size:12px">
+          <thead>
+            <tr style="border-bottom:1.5px solid var(--border2);color:var(--text3)">
+              <th style="text-align:left;padding:5px 4px;font-weight:600">날짜</th>
+              <th style="text-align:left;padding:5px 4px;font-weight:600">카테고리</th>
+              <th style="text-align:left;padding:5px 4px;font-weight:600">메모</th>
+              <th style="text-align:right;padding:5px 4px;font-weight:600">금액</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${actualExps.map(e => {
+              const info = _CATEGORY_MAP[e.category] || { label: e.category, color: '#aaa' };
+              return `<tr style="border-bottom:1px solid var(--border)">
+                <td style="padding:6px 4px;color:var(--text3)">${e.date || '-'}</td>
+                <td style="padding:6px 4px"><span style="background:${info.color}22;color:${info.color};border-radius:4px;padding:1px 6px;font-size:11px;font-weight:600">${info.label}</span></td>
+                <td style="padding:6px 4px;color:var(--text2)">${e.description || '-'}</td>
+                <td style="padding:6px 4px;text-align:right;font-weight:700">${_fmtWon(e.amount)}</td>
+              </tr>`;
+            }).join('')}
+          </tbody>
+        </table>`;
+    }
+  }
+
+  // 지출 입력 카테고리 select
+  const selEl = document.getElementById('ledger-exp-cat');
+  if (selEl) {
+    selEl.innerHTML = Object.entries(_CATEGORY_MAP)
+      .map(([k, v]) => `<option value="${k}">${v.label}</option>`)
+      .join('');
+  }
+}
+
+/** POST /api/trips/{tripId}/expenses → 실제 지출 저장 후 새로고침 */
+async function addLedgerExpense() {
+  if (!_budgetSelectedTripId) return;
+  const cat  = document.getElementById('ledger-exp-cat')?.value;
+  const amt  = document.getElementById('ledger-exp-amount')?.value;
+  const memo = document.getElementById('ledger-exp-memo')?.value?.trim() || null;
+  if (!cat || !amt || +amt <= 0) { toast('카테고리와 금액을 입력해주세요.'); return; }
+
+  const payload = { category: cat, amount: +amt };
+  if (memo) payload.description = memo;
+
+  const res = await api.post('/api/trips/' + _budgetSelectedTripId + '/expenses', payload);
+  if (!res.success) { toast('저장 실패: ' + res.message); return; }
+
+  document.getElementById('ledger-exp-amount').value = '';
+  const memoEl = document.getElementById('ledger-exp-memo');
+  if (memoEl) memoEl.value = '';
+  toast('지출이 저장됐습니다.');
+  await _loadExpenses(_budgetSelectedTripId);
+}
+
+/** 가계부 PDF 자동 다운로드 (jsPDF + html2canvas) */
+async function exportBudgetPDF() {
+  if (!_lastExpenseData) { toast('가계부 데이터를 먼저 불러주세요.'); return; }
+  if (typeof window.jspdf === 'undefined' || typeof html2canvas === 'undefined') {
+    toast('PDF 라이브러리 로딩 중입니다. 잠시 후 다시 시도해주세요.'); return;
+  }
+  const d = _lastExpenseData;
+
+  const catRows = (d.categoryBudgets || []).map(c => {
+    const info = _CATEGORY_MAP[c.category] || { label: c.category };
+    const diff = (c.actualAmount || 0) - (c.estimatedAmount || 0);
+    return `<tr>
+      <td style="padding:7px 10px;border-bottom:1px solid #E5E7EB">${info.label}</td>
+      <td style="padding:7px 10px;border-bottom:1px solid #E5E7EB;text-align:right">${_fmtWon(c.estimatedAmount)}</td>
+      <td style="padding:7px 10px;border-bottom:1px solid #E5E7EB;text-align:right">${_fmtWon(c.actualAmount)}</td>
+      <td style="padding:7px 10px;border-bottom:1px solid #E5E7EB;text-align:right;color:${diff > 0 ? '#EF4444' : '#10B981'}">${diff > 0 ? '+' + _fmtWon(diff) : diff < 0 ? '-' + _fmtWon(-diff) : '-'}</td>
+    </tr>`;
+  }).join('');
+
+  const actRows = (d.actualExpenses || []).length === 0
+    ? '<tr><td colspan="4" style="padding:10px;text-align:center;color:#9CA3AF">실제 지출 내역 없음</td></tr>'
+    : (d.actualExpenses || []).map(e => {
+        const info = _CATEGORY_MAP[e.category] || { label: e.category };
+        return `<tr>
+          <td style="padding:7px 10px;border-bottom:1px solid #E5E7EB">${e.date || '-'}</td>
+          <td style="padding:7px 10px;border-bottom:1px solid #E5E7EB">${info.label}</td>
+          <td style="padding:7px 10px;border-bottom:1px solid #E5E7EB">${e.description || '-'}</td>
+          <td style="padding:7px 10px;border-bottom:1px solid #E5E7EB;text-align:right;font-weight:700">${_fmtWon(e.amount)}</td>
+        </tr>`;
+      }).join('');
+
+  const pdfDiv = document.getElementById('budget-pdf-content');
+  if (!pdfDiv) return;
+
+  const thStyle = 'padding:8px 10px;text-align:left;background:#F9FAFB;font-weight:700;border-bottom:2px solid #E5E7EB';
+  pdfDiv.innerHTML = `
+    <h1 style="font-size:22px;font-weight:900;margin:0 0 4px">가계부 리포트</h1>
+    <p style="color:#6B7280;margin:0 0 6px;font-size:13px">${d.tripTitle || ''}${d.destination ? ' · ' + d.destination : ''}${d.startDate ? ' · ' + d.startDate + ' ~ ' + d.endDate : ''}</p>
+    ${d.budget ? `<p style="color:#6B7280;margin:0 0 20px;font-size:12px">설정 예산: ${_fmtWon(d.budget)}</p>` : '<div style="margin-bottom:20px"></div>'}
+
+    <h3 style="font-size:14px;font-weight:700;margin:0 0 8px;border-bottom:2px solid #E5E7EB;padding-bottom:6px">카테고리별 예산 비교</h3>
+    <table style="width:100%;border-collapse:collapse;font-size:12px;margin-bottom:28px">
+      <thead><tr>
+        <th style="${thStyle}">카테고리</th>
+        <th style="${thStyle};text-align:right">예상 금액</th>
+        <th style="${thStyle};text-align:right">실제 지출</th>
+        <th style="${thStyle};text-align:right">차이</th>
+      </tr></thead>
+      <tbody>${catRows}</tbody>
+      <tfoot><tr style="font-weight:900;background:#F9FAFB">
+        <td style="padding:8px 10px;border-top:2px solid #E5E7EB">합계</td>
+        <td style="padding:8px 10px;border-top:2px solid #E5E7EB;text-align:right">${_fmtWon(d.totalEstimatedAmount)}</td>
+        <td style="padding:8px 10px;border-top:2px solid #E5E7EB;text-align:right">${_fmtWon(d.totalActualAmount)}</td>
+        <td style="padding:8px 10px;border-top:2px solid #E5E7EB"></td>
+      </tr></tfoot>
+    </table>
+
+    <h3 style="font-size:14px;font-weight:700;margin:0 0 8px;border-bottom:2px solid #E5E7EB;padding-bottom:6px">실제 지출 상세 내역</h3>
+    <table style="width:100%;border-collapse:collapse;font-size:12px">
+      <thead><tr>
+        <th style="${thStyle}">날짜</th>
+        <th style="${thStyle}">카테고리</th>
+        <th style="${thStyle}">메모</th>
+        <th style="${thStyle};text-align:right">금액</th>
+      </tr></thead>
+      <tbody>${actRows}</tbody>
+    </table>`;
+
+  toast('PDF 생성 중...');
+  try {
+    const canvas   = await html2canvas(pdfDiv, { scale: 2, useCORS: true, backgroundColor: '#ffffff' });
+    const { jsPDF } = window.jspdf;
+    const doc      = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+    const pageW    = doc.internal.pageSize.getWidth();
+    const pageH    = doc.internal.pageSize.getHeight();
+    const margin   = 10;
+    const imgW     = pageW - margin * 2;
+    const ratio    = canvas.width / imgW;
+    const pageImgH = (pageH - margin * 2) * ratio;
+
+    let srcY = 0;
+    while (srcY < canvas.height) {
+      if (srcY > 0) doc.addPage();
+      const sliceH = Math.min(pageImgH, canvas.height - srcY);
+      const slice  = document.createElement('canvas');
+      slice.width  = canvas.width;
+      slice.height = sliceH;
+      slice.getContext('2d').drawImage(canvas, 0, srcY, canvas.width, sliceH, 0, 0, canvas.width, sliceH);
+      doc.addImage(slice.toDataURL('image/png'), 'PNG', margin, margin, imgW, sliceH / ratio);
+      srcY += pageImgH;
+    }
+
+    doc.save('가계부_' + (d.tripTitle || 'report') + '.pdf');
+    toast('PDF 다운로드 완료!');
+  } catch (e) {
+    console.error(e);
+    toast('PDF 생성 실패: ' + e.message);
+  }
+}
+
+/** 가계부 CSV 다운로드 (Excel에서 열기 가능, 개별 지출 내역 포함) */
+function exportBudgetCSV() {
+  if (!_lastExpenseData) { toast('가계부 데이터를 먼저 불러주세요.'); return; }
+  const d = _lastExpenseData;
+  const q = v => '"' + String(v == null ? '' : v).replace(/"/g, '""') + '"';
+
+  const rows = [];
+  rows.push([q('가계부 리포트')]);
+  if (d.tripTitle)   rows.push([q(d.tripTitle)]);
+  if (d.destination) rows.push([q('목적지'), q(d.destination)]);
+  if (d.startDate)   rows.push([q('기간'), q(d.startDate + ' ~ ' + d.endDate)]);
+  if (d.budget)      rows.push([q('설정 예산'), q(d.budget)]);
+  rows.push([]);
+
+  rows.push([q('[카테고리별 비교]')]);
+  rows.push([q('카테고리'), q('예상 금액(원)'), q('실제 지출(원)'), q('차이(원)')]);
+  (d.categoryBudgets || []).forEach(c => {
+    const info = _CATEGORY_MAP[c.category] || { label: c.category };
+    rows.push([q(info.label), q(c.estimatedAmount || 0), q(c.actualAmount || 0), q((c.actualAmount || 0) - (c.estimatedAmount || 0))]);
+  });
+  rows.push([q('합계'), q(d.totalEstimatedAmount || 0), q(d.totalActualAmount || 0), q((d.totalActualAmount || 0) - (d.totalEstimatedAmount || 0))]);
+  rows.push([]);
+
+  rows.push([q('[실제 지출 상세 내역]')]);
+  rows.push([q('날짜'), q('카테고리'), q('메모'), q('금액(원)')]);
+  if ((d.actualExpenses || []).length === 0) {
+    rows.push([q('(내역 없음)')]);
+  } else {
+    (d.actualExpenses || []).forEach(e => {
+      const info = _CATEGORY_MAP[e.category] || { label: e.category };
+      rows.push([q(e.date || ''), q(info.label), q(e.description || ''), q(e.amount || 0)]);
+    });
+  }
+
+  const csv  = rows.map(r => r.join(',')).join('\n');
+  const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' });
+  const a    = document.createElement('a');
+  a.href     = URL.createObjectURL(blob);
+  a.download = '가계부_' + (d.tripTitle || 'report') + '.csv';
+  a.click();
+  toast('Excel(CSV) 다운로드 시작...');
 }
 
 function returnToMyLedger() {
