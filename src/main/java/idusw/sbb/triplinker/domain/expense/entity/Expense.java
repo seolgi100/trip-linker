@@ -50,4 +50,11 @@ public class Expense {
         this.isEstimated = isEstimated;
         this.expenseDate = expenseDate;
     }
+
+    public void update(String category, String description, Long amount, LocalDate expenseDate) {
+        this.category = category;
+        this.description = description;
+        this.amount = amount;
+        this.expenseDate = expenseDate;
+    }
 }

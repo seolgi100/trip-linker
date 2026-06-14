@@ -35,4 +35,15 @@ public class ExpenseController {
         expenseService.addExpense(tripId, dto);
         return ResponseEntity.ok(ApiResponse.success(null));
     }
+
+    @PutMapping("/{tripId}/expenses/{expenseId}")
+    public ResponseEntity<ApiResponse<Void>> updateExpense(
+            @AuthenticationPrincipal CustomUserDetails userDetails,
+            @PathVariable Long tripId,
+            @PathVariable Long expenseId,
+            @RequestBody ExpenseAddRequestDto dto) {
+
+        expenseService.updateExpense(expenseId, dto);
+        return ResponseEntity.ok(ApiResponse.success(null));
+    }
 }

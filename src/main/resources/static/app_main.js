@@ -98,6 +98,7 @@ async function refreshAccessToken() {
 const api = {
   get:   (path)         => apiCall(path, { method: 'GET' }),
   post:  (path, body)   => apiCall(path, { method: 'POST',  body: JSON.stringify(body) }),
+  put:   (path, body)   => apiCall(path, { method: 'PUT',   body: JSON.stringify(body) }),
   patch: (path, body)   => apiCall(path, { method: 'PATCH', body: JSON.stringify(body) }),
   del:   (path)         => apiCall(path, { method: 'DELETE' })
 };
@@ -113,6 +114,9 @@ let _myTrips              = [];     // GET /api/trips 응답의 data[]
 let _chatSessionId        = null;   // POST /api/chat/sessions 응답의 data.sessionId
 let _budgetSelectedTripId = null;
 let _lastExpenseData      = null;
+let _allActualExps        = [];
+let _expensePage          = 1;
+const _EXP_PAGE_SIZE      = 8;
 let _activeTags           = new Set();
 let _loginFailCount       = 0;
 let _loginLockedUntil     = null;
@@ -571,6 +575,7 @@ function selLedger(tripId) {
 
 async function goLedger2() {
   go('ledger');
+  _populateLedgerTripCards();
   document.getElementById('ledger-selector').style.display = 'none';
   document.getElementById('ledger-main').style.display = 'block';
 
@@ -580,10 +585,47 @@ async function goLedger2() {
     el.textContent = (found.title || '여행 플랜') + ' · ' + (found.startDate || '') + ' ~ ' + (found.endDate || '');
   }
 
-  // GET /api/trips/{tripId}/expenses
   if (_budgetSelectedTripId) {
     await _loadExpenses(_budgetSelectedTripId);
   }
+}
+
+/** ledger-selector 내 여행 카드를 실제 _myTrips 데이터로 채우기 */
+function _populateLedgerTripCards() {
+  const container = document.getElementById('ledger-trip-cards');
+  if (!container) return;
+  if (!_myTrips || !_myTrips.length) {
+    container.innerHTML = '<div style="color:var(--text3);font-size:13px;padding:20px 0;text-align:center">등록된 여행이 없습니다.</div>';
+    return;
+  }
+  container.innerHTML = _myTrips.map(t => {
+    const isSel = (_budgetSelectedTripId === t.tripId);
+    return `
+      <div class="ts-card${isSel ? ' on' : ''}" onclick="_selLedgerCard(this, ${t.tripId})">
+        <div class="ts-thumb">🗺️</div>
+        <div class="ts-info">
+          <div class="ts-name">${t.title || '여행 플랜'}</div>
+          <div class="ts-meta">${t.startDate || ''} ~ ${t.endDate || ''} · ${t.destination || ''}</div>
+        </div>
+        <div class="ts-budget" style="font-size:13px;font-weight:700;color:var(--text2)">${t.status === 'CONFIRMED' ? '✅ 확정' : '📝 초안'}</div>
+      </div>`;
+  }).join('');
+  // 버튼 onclick을 실제 API 연동 함수로 교체
+  const btn = document.querySelector('#ledger-selector .btn-next');
+  if (btn) btn.onclick = goLedger2;
+}
+
+function _selLedgerCard(el, tripId) {
+  document.querySelectorAll('#ledger-trip-cards .ts-card').forEach(c => c.classList.remove('on'));
+  el.classList.add('on');
+  _budgetSelectedTripId = tripId;
+}
+
+/** page_budget.html의 returnToLedgerSelector() 오버라이드 — 실제 데이터 사용 */
+function returnToLedgerSelector() {
+  document.getElementById('ledger-main').style.display = 'none';
+  document.getElementById('ledger-selector').style.display = 'block';
+  _populateLedgerTripCards();
 }
 
 const _CATEGORY_MAP = {
@@ -622,7 +664,7 @@ async function _loadExpenses(tripId) {
   const warnEl     = document.getElementById('ledger-warning');
   const warnCatsEl = document.getElementById('ledger-warn-cats');
   if (warnEl) {
-    if (missingCats.length > 0 && actualExps.length > 0) {
+    if (missingCats.length > 0) {
       const labels = missingCats.map(c => (_CATEGORY_MAP[c] || { label: c }).label);
       if (warnCatsEl) warnCatsEl.textContent = labels.join(', ');
       warnEl.style.display = 'block';
@@ -646,6 +688,16 @@ async function _loadExpenses(tripId) {
       statusEl.style.color = remain >= 0 ? 'var(--sage)' : 'var(--coral)';
     } else {
       statusEl.textContent = '-';
+    }
+  }
+  // 설정 예산 기준 표시
+  const budgetRefEl = document.getElementById('ledger-budget-ref');
+  if (budgetRefEl) {
+    if (d.budget) {
+      budgetRefEl.textContent = '설정 예산 ' + _fmtWon(d.budget) + ' 기준';
+      budgetRefEl.style.display = 'block';
+    } else {
+      budgetRefEl.style.display = 'none';
     }
   }
 
@@ -701,63 +753,44 @@ async function _loadExpenses(tripId) {
     if (actLegEl) actLegEl.innerHTML = '<div class="pie-leg-item" style="color:var(--text3)">실제 지출 없음</div>';
   }
 
-  // ── 카테고리별 비교 막대 ──
+  // ── 카테고리별 비교 막대 (풀 너비 2컬럼 그리드) ──
   const maxAmt = Math.max(...cats.map(c => Math.max(c.estimatedAmount || 0, c.actualAmount || 0)), 1);
   const listEl = document.getElementById('ledger-item-list');
   if (listEl) {
     if (cats.length === 0) {
       listEl.innerHTML = '<div style="color:var(--text3);font-size:13px;padding:20px 0;text-align:center">AI 예상 비용 데이터가 없습니다.</div>';
     } else {
-      listEl.innerHTML = cats.map(c => {
+      const items = cats.map(c => {
         const info   = _CATEGORY_MAP[c.category] || { label: c.category, color: '#aaa' };
         const estW   = Math.round((c.estimatedAmount || 0) / maxAmt * 100) + '%';
         const actW   = Math.round((c.actualAmount   || 0) / maxAmt * 100) + '%';
-        const noAct  = (c.actualAmount || 0) === 0;
+        const noAct  = !actCatSet.has(c.category);   // 0원 입력도 "입력됨"으로 처리
         const isOver = !noAct && (c.actualAmount > c.estimatedAmount);
         return `
-          <div style="margin-bottom:14px">
-            <div style="display:flex;justify-content:space-between;margin-bottom:4px;align-items:center">
-              <div class="bi-label">${info.label}${noAct ? ' <span style="font-size:10px;color:#9CA3AF;font-weight:400">미입력</span>' : ''}</div>
-              <div style="font-size:11px;color:var(--text3)">예상 ${_fmtWon(c.estimatedAmount)} / 실제 ${_fmtWon(c.actualAmount)}</div>
+          <div style="padding:12px 14px;background:var(--cream2);border-radius:10px">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+              <div style="display:flex;align-items:center;gap:7px">
+                <div style="width:10px;height:10px;border-radius:50%;background:${info.color};flex-shrink:0"></div>
+                <span class="bi-label" style="margin:0">${info.label}${noAct ? ' <span style="font-size:10px;color:#9CA3AF;font-weight:400">미입력</span>' : ''}</span>
+              </div>
+              <div style="font-size:11px;color:var(--text3);text-align:right">
+                예상 <strong style="color:var(--text2)">${_fmtWon(c.estimatedAmount)}</strong>
+                &nbsp;/&nbsp; 실제 <strong style="color:${isOver ? 'var(--coral)' : 'var(--text)'}">${_fmtWon(c.actualAmount)}</strong>
+              </div>
             </div>
-            <div class="bi-bar-track" title="예상"><div class="bi-bar-fill" style="width:${estW};background:${info.color};opacity:.4"></div></div>
-            <div class="bi-bar-track" style="margin-top:3px" title="실제"><div class="bi-bar-fill" style="width:${actW};background:${info.color}"></div></div>
-            ${isOver ? `<div style="font-size:11px;color:var(--coral);margin-top:3px">⚠ ${_fmtWon(c.actualAmount - c.estimatedAmount)} 초과</div>` : ''}
+            <div class="bi-bar-track" title="예상 지출"><div class="bi-bar-fill" style="width:${estW};background:${info.color};opacity:.35"></div></div>
+            <div class="bi-bar-track" style="margin-top:4px" title="실제 지출"><div class="bi-bar-fill" style="width:${actW};background:${info.color}"></div></div>
+            ${isOver ? `<div style="font-size:11px;color:var(--coral);margin-top:5px;font-weight:600">⚠ ${_fmtWon(c.actualAmount - c.estimatedAmount)} 초과</div>` : ''}
           </div>`;
       }).join('');
+      listEl.innerHTML = `<div style="display:grid;grid-template-columns:repeat(2,1fr);gap:12px">${items}</div>`;
     }
   }
 
-  // ── 실제 지출 상세 테이블 ──
-  const actTableEl = document.getElementById('ledger-act-table');
-  if (actTableEl) {
-    if (actualExps.length === 0) {
-      actTableEl.innerHTML = '<div style="color:var(--text3);font-size:12px;padding:12px 0">아직 입력된 실제 지출이 없습니다.</div>';
-    } else {
-      actTableEl.innerHTML = `
-        <table style="width:100%;border-collapse:collapse;font-size:12px">
-          <thead>
-            <tr style="border-bottom:1.5px solid var(--border2);color:var(--text3)">
-              <th style="text-align:left;padding:5px 4px;font-weight:600">날짜</th>
-              <th style="text-align:left;padding:5px 4px;font-weight:600">카테고리</th>
-              <th style="text-align:left;padding:5px 4px;font-weight:600">메모</th>
-              <th style="text-align:right;padding:5px 4px;font-weight:600">금액</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${actualExps.map(e => {
-              const info = _CATEGORY_MAP[e.category] || { label: e.category, color: '#aaa' };
-              return `<tr style="border-bottom:1px solid var(--border)">
-                <td style="padding:6px 4px;color:var(--text3)">${e.date || '-'}</td>
-                <td style="padding:6px 4px"><span style="background:${info.color}22;color:${info.color};border-radius:4px;padding:1px 6px;font-size:11px;font-weight:600">${info.label}</span></td>
-                <td style="padding:6px 4px;color:var(--text2)">${e.description || '-'}</td>
-                <td style="padding:6px 4px;text-align:right;font-weight:700">${_fmtWon(e.amount)}</td>
-              </tr>`;
-            }).join('')}
-          </tbody>
-        </table>`;
-    }
-  }
+  // ── 실제 지출 테이블 (페이지네이션) ──
+  _allActualExps = actualExps;
+  _expensePage   = 1;
+  _drawExpensePage();
 
   // 지출 입력 카테고리 select
   const selEl = document.getElementById('ledger-exp-cat');
@@ -766,6 +799,74 @@ async function _loadExpenses(tripId) {
       .map(([k, v]) => `<option value="${k}">${v.label}</option>`)
       .join('');
   }
+
+  // 날짜 input — 기본값: 오늘, 범위: 여행 기간
+  const dateEl = document.getElementById('ledger-exp-date');
+  if (dateEl) {
+    if (!dateEl.value) dateEl.value = new Date().toISOString().slice(0, 10);
+    if (d.startDate) dateEl.min = d.startDate;
+    if (d.endDate)   dateEl.max = d.endDate;
+  }
+}
+
+/** 현재 페이지의 지출 내역 테이블 렌더링 */
+function _drawExpensePage() {
+  const actTableEl = document.getElementById('ledger-act-table');
+  if (!actTableEl) return;
+  const total    = _allActualExps.length;
+  const start    = (_expensePage - 1) * _EXP_PAGE_SIZE;
+  const pageExps = _allActualExps.slice(start, start + _EXP_PAGE_SIZE);
+
+  if (total === 0) {
+    actTableEl.innerHTML = '<div style="color:var(--text3);font-size:12px;padding:12px 0">아직 입력된 실제 지출이 없습니다.</div>';
+  } else {
+    actTableEl.innerHTML = `
+      <table style="width:100%;border-collapse:collapse;font-size:12px">
+        <thead>
+          <tr style="border-bottom:1.5px solid var(--border2);color:var(--text3)">
+            <th style="text-align:left;padding:6px 4px;font-weight:600">날짜</th>
+            <th style="text-align:left;padding:6px 4px;font-weight:600">카테고리</th>
+            <th style="text-align:left;padding:6px 4px;font-weight:600">메모</th>
+            <th style="text-align:right;padding:6px 4px;font-weight:600">금액</th>
+            <th style="padding:6px 4px"></th>
+          </tr>
+        </thead>
+        <tbody>
+          ${pageExps.map(e => {
+            const info = _CATEGORY_MAP[e.category] || { label: e.category, color: '#aaa' };
+            const safeDesc = (e.description || '').replace(/\\/g,'\\\\').replace(/'/g,"\\'");
+            return `<tr id="exp-row-${e.id}" style="border-bottom:1px solid var(--border)">
+              <td style="padding:7px 4px;color:var(--text3)">${e.date || '-'}</td>
+              <td style="padding:7px 4px"><span style="background:${info.color}22;color:${info.color};border-radius:4px;padding:2px 8px;font-size:11px;font-weight:600">${info.label}</span></td>
+              <td style="padding:7px 4px;color:var(--text2)">${e.description || '-'}</td>
+              <td style="padding:7px 4px;text-align:right;font-weight:700">${_fmtWon(e.amount)}</td>
+              <td style="padding:7px 4px"><button onclick="startEditExpense(${e.id},'${e.category}',${e.amount},'${e.date || ''}','${safeDesc}')" style="font-size:11px;padding:3px 10px;background:var(--sage-pale);border:1.5px solid var(--sage-l);border-radius:5px;cursor:pointer;color:var(--sage-d);font-weight:600;white-space:nowrap">수정</button></td>
+            </tr>`;
+          }).join('')}
+        </tbody>
+      </table>`;
+  }
+  _drawPagination(total);
+}
+
+function _drawPagination(total) {
+  const el = document.getElementById('ledger-pagination');
+  if (!el) return;
+  const pages = Math.ceil(total / _EXP_PAGE_SIZE);
+  if (pages <= 1) { el.innerHTML = ''; return; }
+  const prev = `<button class="pager-btn" onclick="setExpensePage(${_expensePage - 1})" ${_expensePage === 1 ? 'disabled style="opacity:.4;cursor:default"' : ''}>‹</button>`;
+  const next = `<button class="pager-btn" onclick="setExpensePage(${_expensePage + 1})" ${_expensePage === pages ? 'disabled style="opacity:.4;cursor:default"' : ''}>›</button>`;
+  const nums = Array.from({ length: pages }, (_, i) => i + 1)
+    .map(n => `<button class="pager-btn${n === _expensePage ? ' on' : ''}" onclick="setExpensePage(${n})">${n}</button>`)
+    .join('');
+  el.innerHTML = `<div class="ledger-pager">${prev}${nums}${next}</div>`;
+}
+
+function setExpensePage(n) {
+  const pages = Math.ceil(_allActualExps.length / _EXP_PAGE_SIZE);
+  if (n < 1 || n > pages) return;
+  _expensePage = n;
+  _drawExpensePage();
 }
 
 /** POST /api/trips/{tripId}/expenses → 실제 지출 저장 후 새로고침 */
@@ -773,10 +874,12 @@ async function addLedgerExpense() {
   if (!_budgetSelectedTripId) return;
   const cat  = document.getElementById('ledger-exp-cat')?.value;
   const amt  = document.getElementById('ledger-exp-amount')?.value;
+  const date = document.getElementById('ledger-exp-date')?.value || null;
   const memo = document.getElementById('ledger-exp-memo')?.value?.trim() || null;
-  if (!cat || !amt || +amt <= 0) { toast('카테고리와 금액을 입력해주세요.'); return; }
+  if (!cat || amt === '' || +amt < 0) { toast('카테고리와 금액을 입력해주세요.'); return; }
 
   const payload = { category: cat, amount: +amt };
+  if (date) payload.expenseDate = date;
   if (memo) payload.description = memo;
 
   const res = await api.post('/api/trips/' + _budgetSelectedTripId + '/expenses', payload);
@@ -786,6 +889,41 @@ async function addLedgerExpense() {
   const memoEl = document.getElementById('ledger-exp-memo');
   if (memoEl) memoEl.value = '';
   toast('지출이 저장됐습니다.');
+  await _loadExpenses(_budgetSelectedTripId);
+}
+
+/** 지출 행을 인라인 수정 모드로 전환 */
+function startEditExpense(id, category, amount, date, desc) {
+  const row = document.getElementById('exp-row-' + id);
+  if (!row) return;
+  const catOptions = Object.entries(_CATEGORY_MAP)
+    .map(([k, v]) => `<option value="${k}"${k === category ? ' selected' : ''}>${v.label}</option>`)
+    .join('');
+  row.innerHTML = `
+    <td><input type="date" id="edit-date-${id}" value="${date}" ${_lastExpenseData&&_lastExpenseData.startDate?'min="'+_lastExpenseData.startDate+'"':''} ${_lastExpenseData&&_lastExpenseData.endDate?'max="'+_lastExpenseData.endDate+'"':''} style="width:108px;font-size:11px;padding:3px 4px;border:1px solid var(--border);border-radius:4px;background:var(--surface);color:var(--text)"></td>
+    <td><select id="edit-cat-${id}" style="font-size:11px;padding:3px 4px;border:1px solid var(--border);border-radius:4px;background:var(--surface);color:var(--text)">${catOptions}</select></td>
+    <td><input type="text" id="edit-desc-${id}" value="${desc}" placeholder="메모" style="width:100%;font-size:11px;padding:3px 4px;border:1px solid var(--border);border-radius:4px;background:var(--surface);color:var(--text)"></td>
+    <td><input type="number" id="edit-amt-${id}" value="${amount}" min="0" style="width:80px;font-size:11px;padding:3px 4px;border:1px solid var(--border);border-radius:4px;background:var(--surface);color:var(--text)"></td>
+    <td style="white-space:nowrap">
+      <button onclick="saveEditExpense(${id})" style="font-size:10px;padding:2px 7px;background:var(--sage);color:#fff;border:none;border-radius:4px;cursor:pointer;margin-right:2px">저장</button>
+      <button onclick="_loadExpenses(_budgetSelectedTripId)" style="font-size:10px;padding:2px 7px;background:none;border:1px solid var(--border);border-radius:4px;cursor:pointer;color:var(--text2)">취소</button>
+    </td>
+  `;
+}
+
+/** 인라인 수정 저장 → PUT /api/trips/{tripId}/expenses/{expenseId} */
+async function saveEditExpense(id) {
+  const category = document.getElementById('edit-cat-' + id)?.value;
+  const amount   = document.getElementById('edit-amt-' + id)?.value;
+  const date     = document.getElementById('edit-date-' + id)?.value || null;
+  const desc     = document.getElementById('edit-desc-' + id)?.value?.trim() || null;
+  if (!category || amount === '' || +amount < 0) { toast('카테고리와 금액을 확인해주세요.'); return; }
+  const payload = { category, amount: +amount };
+  if (date) payload.expenseDate = date;
+  if (desc) payload.description = desc;
+  const res = await api.put('/api/trips/' + _budgetSelectedTripId + '/expenses/' + id, payload);
+  if (!res.success) { toast('수정 실패: ' + res.message); return; }
+  toast('수정됐습니다.');
   await _loadExpenses(_budgetSelectedTripId);
 }
 

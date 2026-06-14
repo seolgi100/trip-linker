@@ -100,4 +100,17 @@ public class ExpenseService {
 
         expenseRepository.save(expense);
     }
+
+    @Transactional
+    public void updateExpense(Long expenseId, ExpenseAddRequestDto dto) {
+        Expense expense = expenseRepository.findById(expenseId)
+                .orElseThrow(() -> new EntityNotFoundException("지출 항목을 찾을 수 없습니다."));
+
+        expense.update(
+                dto.getCategory(),
+                dto.getDescription(),
+                dto.getAmount(),
+                dto.getExpenseDate() != null ? dto.getExpenseDate() : expense.getExpenseDate()
+        );
+    }
 }
