@@ -1,0 +1,252 @@
+/* =============================================================================
+ * TripLinker - 커뮤니티 전용 스타일 (styles_community.css)
+ *
+ * 목적:
+ * - 기존 styles_main.css, styles_place.css 수정 최소화
+ * - 커뮤니티/후기 상세/댓글/CTA 영역만 별도 관리
+ * - 팀원 공통 CSS와 충돌 방지
+ * ============================================================================= */
+
+
+/* =========================================================
+ * 1. 후기 상세 - 연결된 여행 플랜 배지
+ * ========================================================= */
+
+#page-review .review-plan-badge {
+    display: none;
+    margin: 18px 0;
+    padding: 14px 16px;
+    border-radius: 14px;
+    background: var(--sage-pale);
+    border: 1px solid var(--border);
+    color: var(--text2);
+    font-size: 13px;
+    line-height: 1.6;
+}
+
+#page-review .review-plan-badge.on,
+#page-review .review-plan-badge[style*="display: block"],
+#page-review .review-plan-badge[style*="display:block"] {
+    display: block;
+}
+
+#page-review .review-plan-badge strong {
+    color: var(--sage-d);
+    font-weight: 800;
+}
+
+#page-review .review-plan-badge .plan-preview-btn,
+#page-review .review-plan-badge button {
+    margin-top: 10px;
+}
+
+
+/* =========================================================
+ * 2. 후기 상세 - 댓글 영역
+ * ========================================================= */
+
+#page-review .comment-box {
+    margin-top: 26px;
+    padding: 18px;
+    border-radius: 16px;
+    background: var(--surface);
+    border: 1px solid var(--border2);
+    box-shadow: var(--sh);
+}
+
+#page-review .comment-box h3 {
+    font-size: 14px;
+    font-weight: 800;
+    margin-bottom: 12px;
+    color: var(--text1);
+}
+
+#page-review #commentInput,
+#page-review .comment-box input {
+    background: var(--surface);
+    border: 1.5px solid var(--border2);
+    color: var(--text1);
+}
+
+#page-review #commentInput:focus,
+#page-review .comment-box input:focus {
+    background: var(--surface);
+    border-color: var(--sage);
+}
+
+#page-review #commentInput::placeholder,
+#page-review .comment-box input::placeholder {
+    color: var(--text3);
+    opacity: 1;
+}
+
+#page-review .comment-item {
+    padding: 12px 0;
+    border-top: 1px solid var(--border2);
+    font-size: 13px;
+}
+
+#page-review .comment-item:first-child {
+    border-top: none;
+}
+
+#page-review .comment-writer {
+    font-weight: 800;
+    color: var(--text1);
+    margin-bottom: 3px;
+}
+
+#page-review .comment-date {
+    font-size: 11px;
+    color: var(--text3);
+    margin-left: 6px;
+}
+
+#page-review .comment-content {
+    color: var(--text2);
+    line-height: 1.6;
+}
+
+
+/* =========================================================
+ * 3. 후기 상세 - CTA 영역
+ * 와이어프레임 기준으로 크기 축소
+ * ========================================================= */
+
+#page-review .review-cta {
+    max-width: 520px;
+    min-height: 112px;
+    margin: 30px auto 0;
+    padding: 24px 20px;
+    border-radius: 20px;
+    background: linear-gradient(135deg, var(--sage), var(--sage-l));
+    text-align: center;
+    box-shadow: var(--sh);
+}
+
+#page-review .review-cta h2,
+#page-review .review-cta .rcta-ttl {
+    color: #fff;
+    font-size: 20px;
+    font-weight: 800;
+    margin-bottom: 12px;
+    line-height: 1.35;
+}
+
+#page-review .review-cta .rcta-sub {
+    color: rgba(255, 255, 255, .88);
+    font-size: 12px;
+    margin-bottom: 12px;
+}
+
+#page-review .review-plan-btn,
+#page-review .btn-rcta {
+    background: #fff;
+    color: var(--sage);
+    border: none;
+    border-radius: 12px;
+    padding: 12px 28px;
+    font-size: 13px;
+    font-weight: 800;
+    cursor: pointer;
+    transition: all .2s;
+}
+
+#page-review .review-plan-btn:hover,
+#page-review .btn-rcta:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, .10);
+}
+
+
+/* =========================================================
+ * 4. 커뮤니티 상세 - 장소/경로 리스트 보정
+ * ========================================================= */
+
+#page-review #pr-place-list {
+    border-radius: 16px;
+    overflow: hidden;
+}
+
+#page-review .route-preview-card {
+    padding: 14px;
+    border-radius: 14px;
+    border: 1px solid var(--border2);
+    background: var(--surface);
+    margin-bottom: 10px;
+}
+
+#page-review .route-preview-title {
+    font-size: 13px;
+    font-weight: 800;
+    color: var(--text1);
+    margin-bottom: 4px;
+}
+
+#page-review .route-preview-meta {
+    font-size: 12px;
+    color: var(--text3);
+}
+
+
+/* =========================================================
+ * 5. 커뮤니티 전용 모달 보정
+ * ========================================================= */
+
+.community-preview-modal {
+    max-width: 720px;
+}
+
+.community-preview-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.community-preview-day {
+    padding: 14px;
+    border-radius: 14px;
+    background: var(--cream);
+    border: 1px solid var(--border2);
+}
+
+.community-preview-day-title {
+    font-size: 13px;
+    font-weight: 800;
+    color: var(--sage-d);
+    margin-bottom: 8px;
+}
+
+.community-preview-place {
+    padding: 9px 10px;
+    border-radius: 10px;
+    background: var(--surface);
+    border: 1px solid var(--border2);
+    font-size: 12px;
+    color: var(--text2);
+    margin-top: 6px;
+}
+
+
+/* =========================================================
+ * 6. 모바일 대응
+ * ========================================================= */
+
+@media (max-width: 640px) {
+    #page-review .review-cta {
+        max-width: 100%;
+        margin-top: 24px;
+        padding: 22px 16px;
+    }
+
+    #page-review .review-cta h2,
+    #page-review .review-cta .rcta-ttl {
+        font-size: 18px;
+    }
+
+    #page-review .review-plan-btn,
+    #page-review .btn-rcta {
+        width: 100%;
+        padding: 12px 18px;
+    }
+}
