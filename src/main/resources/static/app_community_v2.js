@@ -527,6 +527,19 @@
             return;
         }
 
+        const currentTab =
+            typeof _commState !== 'undefined' && _commState.currentTab
+                ? _commState.currentTab
+                : 'route';
+
+        const categoryMap = {
+            route: 'ROUTE',
+            stay: 'STAY',
+            food: 'FOOD',
+            tour: 'TOUR',
+            cafe: 'CAFE'
+        };
+
         const body = {
             planId: document.getElementById('writePlanId')?.value
                 ? Number(document.getElementById('writePlanId').value)
@@ -534,6 +547,7 @@
             title: title,
             content: content,
             styleTags: styleTags,
+            category: categoryMap[currentTab] || 'ROUTE',
             isPublic: isPublic
         };
 
@@ -1497,10 +1511,12 @@
 })();
 
 /* =============================================================================
- * community v2 - 상세 페이지 와이어프레임 보정
+ * community v2 - 상세 페이지 와이어프레임 최종 보정
  * 목적:
- * - 상세 페이지 카테고리/메타/연동 플랜/장소 스냅샷을 와이어프레임 형태로 보정
- * - 기존 page_place.html 수정 없이 app_community_v2.js에서 후처리
+ * - 해시태그를 연결된 플랜 위로 이동
+ * - 상세 메타를 작성자 · 작성일 · 조회수 · 좋아요 형태로 정리
+ * - 방문 장소별 별점 & 한줄평 카드 축소형 렌더링
+ * - "전체보기" 클릭 시 장소 상세 팝업 연결
  * ============================================================================= */
 
 (function () {
@@ -1527,6 +1543,28 @@
         }
     }
 
+    function parseStyleTags(styleTags) {
+        if (!styleTags) return [];
+
+        if (Array.isArray(styleTags)) {
+            return styleTags.map(v => String(v).trim()).filter(Boolean);
+        }
+
+        try {
+            const parsed = JSON.parse(styleTags);
+            if (Array.isArray(parsed)) {
+                return parsed.map(v => String(v).trim()).filter(Boolean);
+            }
+        } catch (e) {
+            // JSON 문자열이 아니면 쉼표 문자열로 처리
+        }
+
+        return String(styleTags)
+            .split(',')
+            .map(v => v.trim())
+            .filter(Boolean);
+    }
+
     function parseRouteData(value) {
         try {
             if (!value) return [];
@@ -1539,22 +1577,6 @@
         }
 
         return [];
-    }
-
-    function parseStyleTags(styleTags) {
-        if (!styleTags) return [];
-
-        if (Array.isArray(styleTags)) return styleTags;
-
-        try {
-            const parsed = JSON.parse(styleTags);
-            if (Array.isArray(parsed)) return parsed;
-        } catch (e) {}
-
-        return String(styleTags)
-            .split(',')
-            .map(v => v.trim())
-            .filter(Boolean);
     }
 
     function getActualPlaces(routeData) {
@@ -1587,6 +1609,69 @@
         return parseRouteData(post.planRouteJson);
     }
 
+    function removeBodyInlineTags() {
+        const body = document.getElementById('pr-body');
+        if (!body) return;
+
+        const first = body.firstElementChild;
+
+        if (first && first.querySelector && first.querySelector('.post-cat')) {
+            first.remove();
+        }
+    }
+
+    function renderDetailMeta(post) {
+        const metaEl = document.getElementById('pr-meta');
+        if (!metaEl) return;
+
+        const writer = post.writerName || '사용자';
+        const dateText = formatDate(post.createdAt);
+        const views = post.viewCount ?? post.views ?? 0;
+        const likes = post.likeCount ?? post.likes ?? 0;
+
+        metaEl.innerHTML = `
+            <span>${escapeHtml(writer)}</span>
+            ${dateText ? `<span>${escapeHtml(dateText)}</span>` : ''}
+            <span>👁 ${escapeHtml(views)}</span>
+            <span>❤️ ${escapeHtml(likes)}</span>
+        `;
+    }
+
+    function renderDetailCategory(post) {
+        const catEl = document.getElementById('pr-cat');
+        const tagEl = document.getElementById('pr-tag');
+
+        if (catEl) catEl.textContent = post.catLabel || '여행 경로';
+
+        /*
+         * 상단 작은 #태그는 와이어프레임과 중복되므로 숨긴다.
+         * 해시태그 전체 목록은 연결된 플랜 위에 따로 렌더링한다.
+         */
+        if (tagEl) tagEl.style.display = 'none';
+    }
+
+    function renderTagsBeforePlan(post) {
+        const badge = document.getElementById('pr-plan-badge');
+        if (!badge) return;
+
+        const tags = parseStyleTags(post.styleTags);
+
+        const old = document.getElementById('pr-detail-tags');
+        if (old) old.remove();
+
+        if (!tags.length) return;
+
+        const tagBox = document.createElement('div');
+        tagBox.id = 'pr-detail-tags';
+        tagBox.className = 'review-detail-tags';
+
+        tagBox.innerHTML = tags.map(tag => `
+            <span>#${escapeHtml(tag)}</span>
+        `).join('');
+
+        badge.insertAdjacentElement('beforebegin', tagBox);
+    }
+
     function getPlanSummary(post, routeData) {
         const places = getActualPlaces(routeData);
         const placeCount = places.length;
@@ -1603,45 +1688,13 @@
             ? '₩' + Number(post.planBudget).toLocaleString('ko-KR')
             : '';
 
-        const parts = [
+        return [
             title,
             placeCount ? `${placeCount}곳` : '',
             styles,
             transport,
             budget
-        ].filter(Boolean);
-
-        return parts.join(' · ');
-    }
-
-    function renderDetailMeta(post) {
-        const metaEl = document.getElementById('pr-meta');
-        if (!metaEl) return;
-
-        const dateText = formatDate(post.createdAt);
-        const writer = post.writerName || '사용자';
-
-        metaEl.innerHTML = `
-            <span>${escapeHtml(writer)}</span>
-            ${dateText ? `<span>${escapeHtml(dateText)}</span>` : ''}
-            <span>👁 ${escapeHtml(post.viewCount ?? post.views ?? 0)}</span>
-            <span>❤️ ${escapeHtml(post.likeCount ?? post.likes ?? 0)}</span>
-        `;
-    }
-
-    function renderDetailTags(post) {
-        const tagEl = document.getElementById('pr-tag');
-        const catEl = document.getElementById('pr-cat');
-
-        if (catEl) catEl.textContent = post.catLabel || '여행 경로';
-
-        const tags = parseStyleTags(post.styleTags);
-
-        if (tagEl) {
-            tagEl.textContent = tags.length
-                ? '#' + tags[0]
-                : '#커뮤니티';
-        }
+        ].filter(Boolean).join(' · ');
     }
 
     function renderPlanBadge(post, routeData) {
@@ -1661,10 +1714,11 @@
         badge.innerHTML = `
             <div>
                 <strong>🧳 연결된 플랜</strong>
-                <span style="margin-left:8px;color:var(--text2);font-weight:500">
+                <span class="review-plan-summary">
                     ${escapeHtml(getPlanSummary(post, routeData))}
                 </span>
             </div>
+
             <button id="btn-plan-preview"
                     type="button"
                     class="btn-plan-preview"
@@ -1672,6 +1726,23 @@
                 미리보기
             </button>
         `;
+    }
+
+    function getPlaceShortType(type) {
+        if (type === 'stay') return '숙소';
+        if (type === 'cafe' || type === 'breakfast') return '카페';
+        if (type === 'food' || type === 'lunch' || type === 'dinner') return '맛집';
+        if (type === 'tour') return '관광지';
+        return '장소';
+    }
+
+    function getPlaceComment(place) {
+        if (place.review) return place.review;
+        if (place.comment) return place.comment;
+        if (place.oneLineReview) return place.oneLineReview;
+        if (place.summary) return place.summary;
+
+        return '';
     }
 
     function renderPlaceSnapshot(routeData) {
@@ -1693,24 +1764,65 @@
             <div class="review-place-snapshot">
                 <h3>📍 방문 장소별 별점 & 한줄평</h3>
 
-                ${previewPlaces.map(p => `
+                ${previewPlaces.map((p, index) => `
                     <div class="review-place-snapshot-row">
                         <div class="review-place-snapshot-icon">${escapeHtml(p.icon || '📍')}</div>
 
                         <div class="review-place-snapshot-info">
                             <strong>${escapeHtml(p.name)}</strong>
-                            <span>${escapeHtml(p.sub || p.type || '플랜 장소')} &gt; 전체보기</span>
+                            <span>
+                                ${escapeHtml(getPlaceShortType(p.type))}
+                                &gt;
+                                <button type="button"
+                                        class="review-place-view-btn"
+                                        data-place-name="${escapeHtml(p.name)}"
+                                        data-place-type="${escapeHtml(p.type || 'tour')}">
+                                    전체보기
+                                </button>
+                            </span>
                         </div>
 
                         <div class="review-place-snapshot-rating">
                             <b>${escapeHtml(p.stars || '★★★★ 4.5')}</b>
-                            <span>"${escapeHtml(p.replacePh || '좋았던 장소였습니다.')}"</span>
                         </div>
                     </div>
                 `).join('')}
             </div>
         `;
+
+        placeList.querySelectorAll('.review-place-view-btn').forEach(btn => {
+            btn.addEventListener('click', function (e) {
+                e.preventDefault();
+                e.stopPropagation();
+
+                const name = this.dataset.placeName;
+                const type = this.dataset.placeType || 'tour';
+
+                if (typeof window.openCommunityPlaceSummary === 'function') {
+                    window.openCommunityPlaceSummary(name, type);
+                }
+            });
+        });
     }
+
+    window.openCommunityPlaceSummary = function (placeName, placeType) {
+        if (!placeName) return;
+
+        /*
+         * app_main.js에 있는 장소 팝업 함수가 있으면 재사용한다.
+         */
+        if (typeof showMapPlacePopup === 'function') {
+            showMapPlacePopup(placeName, placeType || 'tour');
+            return;
+        }
+
+        /*
+         * 장소 팝업 함수가 없는 환경에서는 최소 안내.
+         */
+        if (typeof toast === 'function') {
+            toast(`${placeName} 상세보기`);
+        }
+    };
 
     async function beautifyReviewDetail(postId) {
         const res = await api.get(`/api/posts/${postId}`);
@@ -1720,8 +1832,10 @@
         const post = res.data;
         const routeData = await getRouteData(post);
 
-        renderDetailTags(post);
+        removeBodyInlineTags();
+        renderDetailCategory(post);
         renderDetailMeta(post);
+        renderTagsBeforePlan(post);
         renderPlanBadge(post, routeData);
         renderPlaceSnapshot(routeData);
     }
@@ -1735,7 +1849,7 @@
             try {
                 await beautifyReviewDetail(postId);
             } catch (e) {
-                console.warn('[community-v2] 상세 페이지 와이어프레임 보정 실패:', e);
+                console.warn('[community-v2] 상세 페이지 와이어프레임 최종 보정 실패:', e);
             }
 
             return result;
@@ -1744,10 +1858,11 @@
 })();
 
 /* =============================================================================
- * community v2 - 상세 페이지 작성일 표시 강제 보정
+ * community v2 - 사이드바 인기 태그 / AI 취향 추천 렌더링
  * 목적:
- * - 상세 API의 createdAt 값을 사용해 작성자 · 작성일 · 조회수 · 좋아요를 표시
- * - 기존 상세 렌더링 이후 마지막에 한 번 더 메타 영역 보정
+ * - 기존 page_community.html의 popular-tags-list, ai-reco-list 영역 채우기
+ * - 기존 /api/posts 목록 API 활용
+ * - 인기 태그 클릭 시 기존 filterByTag 함수와 연동
  * ============================================================================= */
 
 (function () {
@@ -1762,50 +1877,225 @@
             .replaceAll("'", '&#039;');
     }
 
-    function formatDate(value) {
-        if (!value) return '';
+    function parseStyleTags(styleTags) {
+        if (!styleTags) return [];
 
-        return String(value)
-            .substring(0, 10)
-            .replaceAll('-', '.');
+        if (Array.isArray(styleTags)) {
+            return styleTags.map(v => String(v).trim()).filter(Boolean);
+        }
+
+        try {
+            const parsed = JSON.parse(styleTags);
+            if (Array.isArray(parsed)) {
+                return parsed.map(v => String(v).trim()).filter(Boolean);
+            }
+        } catch (e) {
+            // JSON 문자열이 아니면 쉼표 문자열로 처리
+        }
+
+        return String(styleTags)
+            .split(',')
+            .map(v => v.trim().replace(/^#/, ''))
+            .filter(Boolean);
     }
 
-    async function fixDetailMetaDate(postId) {
-        if (!postId) return;
+    function extractPosts(res) {
+        if (Array.isArray(res)) return res;
+        if (Array.isArray(res?.data)) return res.data;
+        if (Array.isArray(res?.data?.content)) return res.data.content;
+        if (Array.isArray(res?.content)) return res.content;
+        return [];
+    }
 
-        const res = await api.get(`/api/posts/${postId}`);
+    async function fetchCommunityPostsForSide() {
+        /*
+         * sort=scrap&category=route는 현재 커뮤니티 목록에서 이미 정상 호출되는 API 형식.
+         * size를 크게 줘서 태그/추천 계산에 사용할 데이터를 조금 더 확보한다.
+         */
+        const res = await api.get('/api/posts?page=0&size=50&sort=scrap&category=route');
+        return extractPosts(res);
+    }
 
-        if (!res || res.success === false || !res.data) return;
+    function renderPopularTags(posts) {
+        const box = document.getElementById('popular-tags-list');
+        if (!box) return;
 
-        const post = res.data;
-        const metaEl = document.getElementById('pr-meta');
+        const tagCount = {};
 
-        if (!metaEl) return;
+        posts.forEach(post => {
+            parseStyleTags(post.styleTags).forEach(tag => {
+                if (!tag) return;
+                tagCount[tag] = (tagCount[tag] || 0) + 1;
+            });
+        });
 
-        const writer = post.writerName || '사용자';
-        const date = formatDate(post.createdAt);
-        const views = post.viewCount ?? post.views ?? 0;
-        const likes = post.likeCount ?? post.likes ?? 0;
+        let tags = Object.entries(tagCount)
+            .sort((a, b) => b[1] - a[1])
+            .map(([name, count]) => ({ name, count }))
+            .slice(0, 9);
 
-        metaEl.innerHTML = `
-            <span>${escapeHtml(writer)}</span>
-            ${date ? `<span>${escapeHtml(date)}</span>` : ''}
-            <span>👁 ${escapeHtml(views)}</span>
-            <span>❤️ ${escapeHtml(likes)}</span>
+        /*
+         * 작성된 글에 태그가 너무 적을 때 화면이 비지 않도록 최소 보정
+         */
+        if (!tags.length) {
+            tags = [
+                { name: '힐링', count: 1 },
+                { name: '맛집', count: 1 },
+                { name: '카페', count: 1 },
+                { name: '가성비', count: 1 },
+                { name: '바다', count: 1 },
+                { name: '커뮤니티', count: 1 }
+            ];
+        }
+
+        box.innerHTML = tags.map(t => `
+            <button type="button"
+                    class="chip chip-sm community-side-tag"
+                    title="${escapeHtml(t.count)}개 글"
+                    onclick="handleCommunitySideTag('${escapeHtml(t.name)}', this)">
+                #${escapeHtml(t.name)}
+            </button>
+        `).join('');
+    }
+
+    function getPostScore(post) {
+        const likes = Number(post.likes ?? post.likeCount ?? 0);
+        const scraps = Number(post.scraps ?? post.scrapCount ?? 0);
+        const views = Number(post.views ?? post.viewCount ?? 0);
+
+        /*
+         * 스크랩과 좋아요를 더 크게 보고, 조회수는 약하게 반영
+         */
+        return likes * 3 + scraps * 4 + views * 0.1;
+    }
+
+    function renderAiRecommendations(posts) {
+        const titleEl = document.getElementById('ai-reco-title');
+        const box = document.getElementById('ai-reco-list');
+
+        if (!box) return;
+
+        if (titleEl) {
+            titleEl.textContent = '지난 제주 힐링 여행 기반 추천';
+        }
+
+        const recommendations = [...posts]
+            .filter(p => p.postId && p.title)
+            .sort((a, b) => getPostScore(b) - getPostScore(a));
+
+        if (!recommendations.length) {
+            box.innerHTML = `
+            <div class="community-ai-simple-card">
+                <div class="community-ai-empty">
+                    추천할 게시글이 아직 없습니다.
+                </div>
+            </div>
         `;
+            return;
+        }
+
+        const post = recommendations[0];
+        const tags = parseStyleTags(post.styleTags);
+
+        /*
+         * 와이어프레임 느낌용 취향 일치 수
+         * 태그 수 + 반응 점수를 간단히 반영
+         */
+        const likes = Number(post.likes ?? post.likeCount ?? 0);
+        const scraps = Number(post.scraps ?? post.scrapCount ?? 0);
+        const matchCount = Math.max(
+            1,
+            tags.length + (likes > 0 ? 1 : 0) + (scraps > 0 ? 1 : 0)
+        );
+
+        box.innerHTML = `
+        <div class="community-ai-simple-card"
+             onclick="openPostDetail(${post.postId})">
+            <div class="community-ai-simple-cat">
+                ${escapeHtml(post.catLabel || '여행 경로')}
+            </div>
+
+            <div class="community-ai-simple-title">
+                ${escapeHtml(post.title)}
+            </div>
+
+            <div class="community-ai-simple-match">
+                취향 일치 ${escapeHtml(matchCount)}개
+            </div>
+        </div>
+    `;
     }
 
-    const prevOpenPostDetailForDateFix = window.openPostDetail;
+    window.handleCommunitySideTag = function (tag, btn) {
+        if (typeof filterByTag === 'function') {
+            filterByTag(tag, btn);
+            return;
+        }
 
-    if (typeof prevOpenPostDetailForDateFix === 'function') {
-        window.openPostDetail = async function (postId) {
-            const result = await prevOpenPostDetailForDateFix.apply(this, arguments);
+        /*
+         * 혹시 filterByTag가 없는 경우의 최소 대체 동작
+         */
+        const q = String(tag || '').toLowerCase();
+
+        document.querySelectorAll('.comm-post-item').forEach(item => {
+            const tags = (item.getAttribute('data-tags') || '').toLowerCase();
+            item.style.display = tags.includes(q) ? '' : 'none';
+        });
+    };
+
+    window.loadCommunitySidePanels = async function () {
+        const tagBox = document.getElementById('popular-tags-list');
+        const recoBox = document.getElementById('ai-reco-list');
+
+        if (!tagBox && !recoBox) return;
+
+        try {
+            const posts = await fetchCommunityPostsForSide();
+
+            renderPopularTags(posts);
+            renderAiRecommendations(posts);
+        } catch (e) {
+            console.error('[community-v2] 사이드바 데이터 렌더링 실패:', e);
+
+            if (tagBox) {
+                tagBox.innerHTML = `
+                    <div style="font-size:12px;color:var(--text3);grid-column:1 / -1">
+                        인기 태그를 불러오지 못했습니다.
+                    </div>
+                `;
+            }
+
+            if (recoBox) {
+                recoBox.innerHTML = `
+                    <div style="font-size:12px;color:var(--text3)">
+                        추천 정보를 불러오지 못했습니다.
+                    </div>
+                `;
+            }
+        }
+    };
+
+    /*
+     * 커뮤니티 목록 로딩 후 사이드바도 같이 갱신
+     */
+    const prevLoadCommunityPostsForSide = window.loadCommunityPosts;
+
+    if (typeof prevLoadCommunityPostsForSide === 'function') {
+        window.loadCommunityPosts = async function () {
+            const result = await prevLoadCommunityPostsForSide.apply(this, arguments);
 
             setTimeout(function () {
-                fixDetailMetaDate(postId);
+                window.loadCommunitySidePanels();
             }, 80);
 
             return result;
         };
     }
+
+    /*
+     * 페이지 최초 진입 시에도 한 번 렌더링
+     */
+    setTimeout(function () {
+        window.loadCommunitySidePanels();
+    }, 300);
 })();

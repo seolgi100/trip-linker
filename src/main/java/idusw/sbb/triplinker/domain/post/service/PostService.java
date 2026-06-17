@@ -55,12 +55,59 @@ public class PostService {
     }
 
     // 커뮤니티 - 게시글 목록 조회
-    public Page<PostListResponseDto> getPosts(Pageable pageable) {
-        return postRepository.findByStatusOrderByCreatedAtDesc("ACTIVE", pageable)
-                .map(post -> PostListResponseDto.from(
-                        post,
-                        (int) postScrapRepository.countByPost_Id(post.getId())
-                ));
+    public Page<PostListResponseDto> getPosts(Pageable pageable, String category) {
+        Page<Post> posts;
+
+        if (category == null || category.isBlank() || category.equalsIgnoreCase("all")) {
+            posts = postRepository.findByStatusOrderByCreatedAtDesc("ACTIVE", pageable);
+        } else {
+            String categoryCode = toCategoryCode(category);
+
+            if ("ROUTE".equals(categoryCode)) {
+                posts = postRepository.findRoutePostsIncludingNullCategory(
+                        "ACTIVE",
+                        "ROUTE",
+                        pageable
+                );
+            } else {
+                posts = postRepository.findByStatusAndCategoryOrderByCreatedAtDesc(
+                        "ACTIVE",
+                        categoryCode,
+                        pageable
+                );
+            }
+        }
+
+        return posts.map(post -> PostListResponseDto.from(
+                post,
+                (int) postScrapRepository.countByPost_Id(post.getId())
+        ));
+    }
+
+    private String toCategoryCode(String category) {
+        return switch (category.toLowerCase()) {
+            case "stay" -> "STAY";
+            case "food" -> "FOOD";
+            case "tour" -> "TOUR";
+            case "cafe" -> "CAFE";
+            case "route" -> "ROUTE";
+            default -> "ROUTE";
+        };
+    }
+
+    private String normalizeCategory(String category) {
+        if (category == null || category.isBlank()) {
+            return "ROUTE";
+        }
+
+        return switch (category.toUpperCase()) {
+            case "STAY" -> "STAY";
+            case "FOOD" -> "FOOD";
+            case "TOUR" -> "TOUR";
+            case "CAFE" -> "CAFE";
+            case "ROUTE" -> "ROUTE";
+            default -> "ROUTE";
+        };
     }
 
     // 커뮤니티 - 게시글 작성
@@ -82,6 +129,7 @@ public class PostService {
                 .title(dto.getTitle())
                 .content(dto.getContent())
                 .styleTags(dto.getStyleTags())
+                .category(normalizeCategory(dto.getCategory()))
                 .status("ACTIVE")
                 .isPublic(dto.isPublic())
                 .build();

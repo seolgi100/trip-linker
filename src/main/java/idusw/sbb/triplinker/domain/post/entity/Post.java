@@ -40,6 +40,9 @@ public class Post {
     @Column(name = "style_tags")
     private String styleTags;
 
+    @Column(nullable = false, length = 20)
+    private String category = "ROUTE";
+
     @Column(name = "like_count", nullable = false)
     private int likeCount = 0;
 
@@ -62,12 +65,13 @@ public class Post {
 
     @Builder
 
-    public Post(User user, TravelPlan plan, String title, String content, String styleTags, String status, boolean isPublic) {
+    public Post(User user, TravelPlan plan, String title, String content, String styleTags, String category, String status, boolean isPublic) {
         this.user = user;
         this.plan = plan;
         this.title = title;
         this.content = content;
         this.styleTags = styleTags;
+        this.category = category != null ? category : "ROUTE";
         this.status = status != null ? status : "ACTIVE";
         this.isPublic = isPublic;
     }
@@ -91,6 +95,10 @@ public class Post {
 
         if (this.status == null) {
             this.status = "ACTIVE";
+        }
+
+        if (this.category == null) {
+            this.category = "ROUTE";
         }
     }
 

@@ -21,6 +21,8 @@ public class PostWriteDto {
     // 여행 취향 태그(JSON 문자열)
     private String styleTags;
 
+    private String category = "ROUTE";
+
     // 공개 여부
     private boolean isPublic = true;
 }

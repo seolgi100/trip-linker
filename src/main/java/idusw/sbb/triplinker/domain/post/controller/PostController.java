@@ -35,7 +35,8 @@ public class PostController {
             @RequestParam(required = false) String category
     ) {
         Pageable pageable = PageRequest.of(page, size);
-        Page<PostListResponseDto> posts = postService.getPosts(pageable);
+
+        Page<PostListResponseDto> posts = postService.getPosts(pageable, category);
 
         return ResponseEntity.ok(
                 ApiResponse.success("게시글 목록 조회 성공", posts)
