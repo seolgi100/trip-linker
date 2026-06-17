@@ -57,7 +57,10 @@ public class PostService {
     // 커뮤니티 - 게시글 목록 조회
     public Page<PostListResponseDto> getPosts(Pageable pageable) {
         return postRepository.findByStatusOrderByCreatedAtDesc("ACTIVE", pageable)
-                .map(PostListResponseDto::from);
+                .map(post -> PostListResponseDto.from(
+                        post,
+                        (int) postScrapRepository.countByPost_Id(post.getId())
+                ));
     }
 
     // 커뮤니티 - 게시글 작성

@@ -1324,3 +1324,488 @@
         if (overlay) overlay.classList.remove('open');
     };
 })();
+
+/* =============================================================================
+ * community v2 - 커뮤니티 목록 카드 렌더링 보완
+ * 목적:
+ * - 목록 카드 오른쪽 아래 좋아요/스크랩/신고 버튼 제거
+ * - 와이어프레임처럼 작성자 · 작성일 표시
+ * - 백엔드 목록 DTO 필드명(writerName, createdAt, likes, scraps, views, styleTags)에 맞춤
+ * ============================================================================= */
+
+(function () {
+    'use strict';
+
+    function escapeHtml(value) {
+        return String(value ?? '')
+            .replaceAll('&', '&amp;')
+            .replaceAll('<', '&lt;')
+            .replaceAll('>', '&gt;')
+            .replaceAll('"', '&quot;')
+            .replaceAll("'", '&#039;');
+    }
+
+    function parseStyleTags(styleTags) {
+        if (!styleTags) return [];
+
+        if (Array.isArray(styleTags)) {
+            return styleTags.map(v => String(v).trim()).filter(Boolean);
+        }
+
+        try {
+            const parsed = JSON.parse(styleTags);
+            if (Array.isArray(parsed)) {
+                return parsed.map(v => String(v).trim()).filter(Boolean);
+            }
+        } catch (e) {
+            // JSON 문자열이 아니면 쉼표 문자열로 처리
+        }
+
+        return String(styleTags)
+            .split(',')
+            .map(v => v.trim())
+            .filter(Boolean);
+    }
+
+    function formatPostDate(createdAt) {
+        if (!createdAt) return '날짜 없음';
+
+        try {
+            return String(createdAt)
+                .substring(0, 10)
+                .replaceAll('-', '.');
+        } catch (e) {
+            return '날짜 없음';
+        }
+    }
+
+    function getCategoryLabel(tabKey, post) {
+        if (post.catLabel) return post.catLabel;
+
+        const map = {
+            route: '여행 경로',
+            stay: '숙소',
+            food: '맛집',
+            tour: '관광지',
+            cafe: '카페'
+        };
+
+        return map[tabKey] || '여행 경로';
+    }
+
+    function getCategoryClass(tabKey, post) {
+        if (post.catClass) return post.catClass;
+
+        const map = {
+            route: 'cat-route',
+            stay: 'cat-stay',
+            food: 'cat-food',
+            tour: 'cat-tour',
+            cafe: 'cat-cafe'
+        };
+
+        return map[tabKey] || 'cat-route';
+    }
+
+    window._renderPostList = function (posts, reset) {
+        const currentTab =
+            typeof _commState !== 'undefined' && _commState.currentTab
+                ? _commState.currentTab
+                : 'route';
+
+        const tabEl = document.getElementById('tab-' + currentTab);
+        if (!tabEl) return;
+
+        if (reset) tabEl.innerHTML = '';
+
+        if (!posts || !posts.length) {
+            tabEl.innerHTML += `
+                <div style="padding:40px 20px;text-align:center;color:var(--text3);font-size:14px">
+                    게시글이 없습니다.
+                </div>
+            `;
+            return;
+        }
+
+        posts.forEach(post => {
+            const postId = post.postId;
+            const tags = parseStyleTags(post.styleTags);
+
+            const dateText = formatPostDate(post.createdAt);
+            const writerText = post.writerName || '사용자';
+
+            const likes = post.likes ?? post.likeCount ?? 0;
+            const scraps = post.scraps ?? post.scrapCount ?? 0;
+            const views = post.views ?? post.viewCount ?? 0;
+
+            const catLabel = getCategoryLabel(currentTab, post);
+            const catClass = getCategoryClass(currentTab, post);
+
+            const dateVal = post.createdAt
+                ? String(post.createdAt).substring(0, 10).replaceAll('-', '')
+                : '0';
+
+            const div = document.createElement('div');
+            div.className = 'comm-post-item';
+            div.setAttribute('data-tags', tags.join(','));
+            div.setAttribute('data-author', writerText);
+            div.setAttribute('data-likes', likes);
+            div.setAttribute('data-scrap', scraps);
+            div.setAttribute('data-date', dateVal);
+
+            div.innerHTML = `
+                <div class="post-card" onclick="openPostDetail(${postId})">
+                    <div class="community-card-head">
+                        <span class="post-cat ${escapeHtml(catClass)}">${escapeHtml(catLabel)}</span>
+                        <span class="community-card-meta">${escapeHtml(writerText)} · ${escapeHtml(dateText)}</span>
+                    </div>
+
+                    <div class="post-ttl">${escapeHtml(post.title || '제목 없음')}</div>
+
+                    ${
+                tags.length
+                    ? `<div class="community-card-tags">
+                                ${tags.map(tag => `
+                                    <span>#${escapeHtml(tag)}</span>
+                                `).join('')}
+                               </div>`
+                    : ''
+            }
+
+                    <div class="post-foot">
+                        <div class="post-stats">
+                            <span class="post-stat">❤️ ${likes}</span>
+                            <span class="post-stat">🔖 ${scraps}</span>
+                            <span class="post-stat">👁 ${views}</span>
+                        </div>
+                    </div>
+                </div>
+            `;
+
+            tabEl.appendChild(div);
+        });
+    };
+
+    /*
+     * 기존 loadCommunityPosts 내부에서 식별자 _renderPostList를 직접 참조하는 경우까지 대비
+     */
+    try {
+        _renderPostList = window._renderPostList;
+    } catch (e) {
+        // 일부 환경에서는 재할당이 막힐 수 있으므로 무시
+    }
+})();
+
+/* =============================================================================
+ * community v2 - 상세 페이지 와이어프레임 보정
+ * 목적:
+ * - 상세 페이지 카테고리/메타/연동 플랜/장소 스냅샷을 와이어프레임 형태로 보정
+ * - 기존 page_place.html 수정 없이 app_community_v2.js에서 후처리
+ * ============================================================================= */
+
+(function () {
+    'use strict';
+
+    function escapeHtml(value) {
+        return String(value ?? '')
+            .replaceAll('&', '&amp;')
+            .replaceAll('<', '&lt;')
+            .replaceAll('>', '&gt;')
+            .replaceAll('"', '&quot;')
+            .replaceAll("'", '&#039;');
+    }
+
+    function formatDate(value) {
+        if (!value) return '';
+
+        try {
+            return String(value)
+                .substring(0, 10)
+                .replaceAll('-', '.');
+        } catch (e) {
+            return '';
+        }
+    }
+
+    function parseRouteData(value) {
+        try {
+            if (!value) return [];
+            if (Array.isArray(value)) return value;
+            if (typeof value === 'string') return JSON.parse(value);
+            if (typeof value.data === 'string') return JSON.parse(value.data);
+            if (Array.isArray(value.data)) return value.data;
+        } catch (e) {
+            console.warn('[community-v2] 상세 routeData 파싱 실패:', e);
+        }
+
+        return [];
+    }
+
+    function parseStyleTags(styleTags) {
+        if (!styleTags) return [];
+
+        if (Array.isArray(styleTags)) return styleTags;
+
+        try {
+            const parsed = JSON.parse(styleTags);
+            if (Array.isArray(parsed)) return parsed;
+        } catch (e) {}
+
+        return String(styleTags)
+            .split(',')
+            .map(v => v.trim())
+            .filter(Boolean);
+    }
+
+    function getActualPlaces(routeData) {
+        const places = [];
+
+        routeData.forEach(day => {
+            (day.places || []).forEach(p => {
+                if (p.transit) return;
+                if (!p.name) return;
+
+                places.push({
+                    ...p,
+                    day: day.day
+                });
+            });
+        });
+
+        return places;
+    }
+
+    async function getRouteData(post) {
+        if (!post?.planId) return parseRouteData(post?.planRouteJson);
+
+        const res = await api.get(`/api/trips/${post.planId}/routes?t=${Date.now()}`);
+
+        if (res && res.success !== false && res.data) {
+            return parseRouteData(res.data);
+        }
+
+        return parseRouteData(post.planRouteJson);
+    }
+
+    function getPlanSummary(post, routeData) {
+        const places = getActualPlaces(routeData);
+        const placeCount = places.length;
+
+        const title = post.planTitle || post.planDestination || '연동된 플랜';
+
+        const styles = post.planTravelStyles
+            ? String(post.planTravelStyles).replaceAll(',', ' · ')
+            : '여행';
+
+        const transport = post.planTransportType || '';
+
+        const budget = post.planBudget
+            ? '₩' + Number(post.planBudget).toLocaleString('ko-KR')
+            : '';
+
+        const parts = [
+            title,
+            placeCount ? `${placeCount}곳` : '',
+            styles,
+            transport,
+            budget
+        ].filter(Boolean);
+
+        return parts.join(' · ');
+    }
+
+    function renderDetailMeta(post) {
+        const metaEl = document.getElementById('pr-meta');
+        if (!metaEl) return;
+
+        const dateText = formatDate(post.createdAt);
+        const writer = post.writerName || '사용자';
+
+        metaEl.innerHTML = `
+            <span>${escapeHtml(writer)}</span>
+            ${dateText ? `<span>${escapeHtml(dateText)}</span>` : ''}
+            <span>👁 ${escapeHtml(post.viewCount ?? post.views ?? 0)}</span>
+            <span>❤️ ${escapeHtml(post.likeCount ?? post.likes ?? 0)}</span>
+        `;
+    }
+
+    function renderDetailTags(post) {
+        const tagEl = document.getElementById('pr-tag');
+        const catEl = document.getElementById('pr-cat');
+
+        if (catEl) catEl.textContent = post.catLabel || '여행 경로';
+
+        const tags = parseStyleTags(post.styleTags);
+
+        if (tagEl) {
+            tagEl.textContent = tags.length
+                ? '#' + tags[0]
+                : '#커뮤니티';
+        }
+    }
+
+    function renderPlanBadge(post, routeData) {
+        const badge = document.getElementById('pr-plan-badge');
+        if (!badge) return;
+
+        if (!post.planId) {
+            badge.style.display = 'none';
+            return;
+        }
+
+        badge.style.display = 'flex';
+        badge.style.alignItems = 'center';
+        badge.style.justifyContent = 'space-between';
+        badge.style.gap = '12px';
+
+        badge.innerHTML = `
+            <div>
+                <strong>🧳 연결된 플랜</strong>
+                <span style="margin-left:8px;color:var(--text2);font-weight:500">
+                    ${escapeHtml(getPlanSummary(post, routeData))}
+                </span>
+            </div>
+            <button id="btn-plan-preview"
+                    type="button"
+                    class="btn-plan-preview"
+                    onclick="openCommunityPlanPreview()">
+                미리보기
+            </button>
+        `;
+    }
+
+    function renderPlaceSnapshot(routeData) {
+        const placeList = document.getElementById('pr-place-list');
+        if (!placeList) return;
+
+        const places = getActualPlaces(routeData);
+
+        if (!places.length) {
+            placeList.style.display = 'none';
+            return;
+        }
+
+        const previewPlaces = places.slice(0, 2);
+
+        placeList.style.display = 'block';
+
+        placeList.innerHTML = `
+            <div class="review-place-snapshot">
+                <h3>📍 방문 장소별 별점 & 한줄평</h3>
+
+                ${previewPlaces.map(p => `
+                    <div class="review-place-snapshot-row">
+                        <div class="review-place-snapshot-icon">${escapeHtml(p.icon || '📍')}</div>
+
+                        <div class="review-place-snapshot-info">
+                            <strong>${escapeHtml(p.name)}</strong>
+                            <span>${escapeHtml(p.sub || p.type || '플랜 장소')} &gt; 전체보기</span>
+                        </div>
+
+                        <div class="review-place-snapshot-rating">
+                            <b>${escapeHtml(p.stars || '★★★★ 4.5')}</b>
+                            <span>"${escapeHtml(p.replacePh || '좋았던 장소였습니다.')}"</span>
+                        </div>
+                    </div>
+                `).join('')}
+            </div>
+        `;
+    }
+
+    async function beautifyReviewDetail(postId) {
+        const res = await api.get(`/api/posts/${postId}`);
+
+        if (!res || res.success === false || !res.data) return;
+
+        const post = res.data;
+        const routeData = await getRouteData(post);
+
+        renderDetailTags(post);
+        renderDetailMeta(post);
+        renderPlanBadge(post, routeData);
+        renderPlaceSnapshot(routeData);
+    }
+
+    const prevOpenPostDetailForWireframe = window.openPostDetail;
+
+    if (typeof prevOpenPostDetailForWireframe === 'function') {
+        window.openPostDetail = async function (postId) {
+            const result = await prevOpenPostDetailForWireframe.apply(this, arguments);
+
+            try {
+                await beautifyReviewDetail(postId);
+            } catch (e) {
+                console.warn('[community-v2] 상세 페이지 와이어프레임 보정 실패:', e);
+            }
+
+            return result;
+        };
+    }
+})();
+
+/* =============================================================================
+ * community v2 - 상세 페이지 작성일 표시 강제 보정
+ * 목적:
+ * - 상세 API의 createdAt 값을 사용해 작성자 · 작성일 · 조회수 · 좋아요를 표시
+ * - 기존 상세 렌더링 이후 마지막에 한 번 더 메타 영역 보정
+ * ============================================================================= */
+
+(function () {
+    'use strict';
+
+    function escapeHtml(value) {
+        return String(value ?? '')
+            .replaceAll('&', '&amp;')
+            .replaceAll('<', '&lt;')
+            .replaceAll('>', '&gt;')
+            .replaceAll('"', '&quot;')
+            .replaceAll("'", '&#039;');
+    }
+
+    function formatDate(value) {
+        if (!value) return '';
+
+        return String(value)
+            .substring(0, 10)
+            .replaceAll('-', '.');
+    }
+
+    async function fixDetailMetaDate(postId) {
+        if (!postId) return;
+
+        const res = await api.get(`/api/posts/${postId}`);
+
+        if (!res || res.success === false || !res.data) return;
+
+        const post = res.data;
+        const metaEl = document.getElementById('pr-meta');
+
+        if (!metaEl) return;
+
+        const writer = post.writerName || '사용자';
+        const date = formatDate(post.createdAt);
+        const views = post.viewCount ?? post.views ?? 0;
+        const likes = post.likeCount ?? post.likes ?? 0;
+
+        metaEl.innerHTML = `
+            <span>${escapeHtml(writer)}</span>
+            ${date ? `<span>${escapeHtml(date)}</span>` : ''}
+            <span>👁 ${escapeHtml(views)}</span>
+            <span>❤️ ${escapeHtml(likes)}</span>
+        `;
+    }
+
+    const prevOpenPostDetailForDateFix = window.openPostDetail;
+
+    if (typeof prevOpenPostDetailForDateFix === 'function') {
+        window.openPostDetail = async function (postId) {
+            const result = await prevOpenPostDetailForDateFix.apply(this, arguments);
+
+            setTimeout(function () {
+                fixDetailMetaDate(postId);
+            }, 80);
+
+            return result;
+        };
+    }
+})();
