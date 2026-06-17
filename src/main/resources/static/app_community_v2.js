@@ -471,20 +471,29 @@
  * - styleTags 배열 전송으로 인한 JSON parse error 해결
  * - 백엔드 PostWriteDto.styleTags(String)에 맞춰 문자열로 전송
  * - 기존 app_community.js 수정 없이 submitReview만 덮어쓰기
- * ============================================================================= */
+ * =============================================================================
+ */
 
 (function () {
     'use strict';
 
     window.submitReview = async function () {
+
         if (typeof _isSuspended !== 'undefined' && _isSuspended) {
-            if (typeof toast === 'function') toast('⛔ 해당 계정은 커뮤니티 기능이 제한되었습니다.');
+            if (typeof toast === 'function') {
+                toast('⛔ 해당 계정은 커뮤니티 기능이 제한되었습니다.');
+            }
             return;
         }
 
         if (typeof Token === 'undefined' || !Token.getAccess || !Token.getAccess()) {
-            if (typeof toast === 'function') toast('로그인이 필요합니다.');
-            if (typeof go === 'function') go('login');
+            if (typeof toast === 'function') {
+                toast('로그인이 필요합니다.');
+            }
+
+            if (typeof go === 'function') {
+                go('login');
+            }
             return;
         }
 
@@ -498,16 +507,11 @@
             ? (editorEl.innerText || editorEl.value || '').trim()
             : '';
 
+        const plainContent = content;
         const tagText = tagsEl ? tagsEl.value.trim() : '';
 
-        /*
-         * 핵심:
-         * 백엔드 PostWriteDto.styleTags는 String 타입이므로
-         * 배열이 아니라 문자열로 보낸다.
-         *
-         * 예:
-         * "테스트,커뮤니티"
-         */
+        // PostWriteDto.styleTags는 String 타입
+        // 예: "테스트,커뮤니티"
         const styleTags = tagText
             .split(/[\s,]+/)
             .map(v => v.trim())
@@ -516,8 +520,10 @@
 
         const isPublic = publicEl ? !!publicEl.checked : true;
 
-        if (!title || !content) {
-            if (typeof toast === 'function') toast('제목과 내용을 입력해주세요.');
+        if (!title || !plainContent) {
+            if (typeof toast === 'function') {
+                toast('제목과 내용을 입력해주세요.');
+            }
             return;
         }
 
@@ -533,23 +539,29 @@
 
         const res = await api.post('/api/posts', body);
 
-        /*
-         * PostController.createPost는 Long postId를 그대로 반환하므로
-         * 응답이 {success:true}가 아니라 숫자일 수도 있다.
-         */
+        // PostController.createPost는 Long postId 반환
         const success =
             typeof res === 'number' ||
-            (res && res.success !== false);
+            res?.success === true ||
+            typeof res?.data === 'number';
 
         if (success) {
-            if (typeof closeWrite === 'function') closeWrite();
-            if (typeof toast === 'function') toast('후기가 등록되었습니다! 🎉');
+            if (typeof closeWrite === 'function') {
+                closeWrite();
+            }
+
+            if (typeof toast === 'function') {
+                toast('후기가 등록되었습니다! 🎉');
+            }
 
             if (typeof loadCommunityPosts === 'function') {
                 await loadCommunityPosts(0, true);
             }
 
-            if (typeof go === 'function') go('community');
+            if (typeof go === 'function') {
+                go('community');
+            }
+
             return;
         }
 
@@ -557,6 +569,7 @@
             toast(res?.message || '게시글 등록에 실패했습니다.');
         }
     };
+
 })();
 
 /* =============================================================================
@@ -881,4 +894,530 @@
 
         await loadWritePlanOptions(select);
     };
+})();
+
+/* =============================================================================
+ * community v2 - 후기 작성 이미지 첨부 버튼 보완
+ * 목적:
+ * - 기존 HTML의 onclick="toast('이미지 업로드')" 버튼을 직접 수정하지 않고 덮어쓰기
+ * - 사진 첨부 클릭 시 파일 선택창 열기
+ * - 선택한 이미지를 작성 에디터에 미리보기로 삽입
+ * 주의:
+ * - 현재 단계는 프론트 미리보기 중심
+ * - 실제 서버 이미지 저장은 별도 이미지 업로드 API가 필요할 수 있음
+ * ============================================================================= */
+
+(function () {
+    'use strict';
+
+    window._communitySelectedImages = window._communitySelectedImages || [];
+
+    function findImageButton() {
+        return [...document.querySelectorAll('button')]
+            .find(btn => btn.innerText && btn.innerText.includes('사진 첨부'));
+    }
+
+    function getEditor() {
+        return document.getElementById('blogEditor');
+    }
+
+    function ensureImageInput() {
+        let input = document.getElementById('communityImageInput');
+
+        if (!input) {
+            input = document.createElement('input');
+            input.id = 'communityImageInput';
+            input.type = 'file';
+            input.accept = 'image/*';
+            input.multiple = true;
+            input.style.display = 'none';
+            document.body.appendChild(input);
+
+            input.addEventListener('change', handleImageSelect);
+        }
+
+        return input;
+    }
+
+    function handleImageSelect(e) {
+        const files = [...(e.target.files || [])];
+
+        if (!files.length) return;
+
+        const editor = getEditor();
+
+        if (!editor) {
+            if (typeof toast === 'function') toast('본문 입력창을 찾을 수 없습니다.');
+            return;
+        }
+
+        files.forEach(file => {
+            if (!file.type.startsWith('image/')) {
+                if (typeof toast === 'function') toast('이미지 파일만 첨부할 수 있습니다.');
+                return;
+            }
+
+            const reader = new FileReader();
+
+            reader.onload = function (event) {
+                const dataUrl = event.target.result;
+
+                window._communitySelectedImages.push({
+                    name: file.name,
+                    type: file.type,
+                    size: file.size,
+                    dataUrl: dataUrl
+                });
+
+                const img = document.createElement('img');
+                img.src = dataUrl;
+                img.alt = file.name;
+                img.style.maxWidth = '100%';
+                img.style.borderRadius = '10px';
+                img.style.margin = '10px 0';
+                img.style.display = 'block';
+
+                editor.appendChild(img);
+
+                const br = document.createElement('br');
+                editor.appendChild(br);
+            };
+
+            reader.readAsDataURL(file);
+        });
+
+        if (typeof toast === 'function') toast('이미지를 첨부했습니다.');
+
+        // 같은 파일을 다시 선택할 수 있도록 초기화
+        e.target.value = '';
+    }
+
+    window.bindCommunityImageButton = function () {
+        const btn = findImageButton();
+
+        if (!btn) {
+            console.warn('[community-v2] 사진 첨부 버튼을 찾지 못했습니다.');
+            return;
+        }
+
+        btn.onclick = function (e) {
+            if (e) e.preventDefault();
+
+            const input = ensureImageInput();
+            input.click();
+        };
+    };
+
+    /*
+     * 후기 작성 버튼을 눌러 모달이 열린 뒤 사진 버튼을 다시 연결한다.
+     * checkAndOpenWrite는 이미 이전 코드에서 감싸져 있을 수 있으므로 한 번 더 안전하게 감싼다.
+     */
+    const prevCheckAndOpenWriteForImage = window.checkAndOpenWrite;
+
+    if (typeof prevCheckAndOpenWriteForImage === 'function') {
+        window.checkAndOpenWrite = function () {
+            const result = prevCheckAndOpenWriteForImage.apply(this, arguments);
+
+            setTimeout(function () {
+                if (typeof window.injectWritePlanSelect === 'function') {
+                    window.injectWritePlanSelect();
+                }
+
+                window.bindCommunityImageButton();
+            }, 200);
+
+            return result;
+        };
+    }
+
+    /*
+     * 이미 모달이 열려 있는 상태에서 새로고침 없이 테스트할 수 있도록 수동 호출 가능
+     */
+})();
+
+/* =============================================================================
+ * community v2 - 연결된 플랜 미리보기 모달
+ * 목적:
+ * - 상세 페이지의 연결된 플랜 영역에 "미리보기" 버튼 추가
+ * - 버튼 클릭 시 와이어프레임 형태의 플랜 미리보기 모달 표시
+ * - 기존 HTML 수정 없이 JS에서 모달 생성
+ * ============================================================================= */
+
+(function () {
+    'use strict';
+
+    let _communityCurrentPlanPreview = null;
+
+    function escapeHtml(value) {
+        return String(value ?? '')
+            .replaceAll('&', '&amp;')
+            .replaceAll('<', '&lt;')
+            .replaceAll('>', '&gt;')
+            .replaceAll('"', '&quot;')
+            .replaceAll("'", '&#039;');
+    }
+
+    function formatMoney(value) {
+        if (value === null || value === undefined || value === '') return '예산 정보 없음';
+        const num = Number(value);
+        if (Number.isNaN(num)) return escapeHtml(value);
+        return '₩' + num.toLocaleString('ko-KR') + '~';
+    }
+
+    function formatPeriod(start, end) {
+        if (!start && !end) return '일정 정보 없음';
+        if (start && end) return `${start} ~ ${end}`;
+        return start || end;
+    }
+
+    function parseRouteJson(planRouteJson) {
+        if (!planRouteJson) return [];
+
+        try {
+            const parsed = typeof planRouteJson === 'string'
+                ? JSON.parse(planRouteJson)
+                : planRouteJson;
+
+            if (Array.isArray(parsed)) return parsed;
+            if (Array.isArray(parsed.days)) return parsed.days;
+            if (Array.isArray(parsed.routes)) return parsed.routes;
+            if (Array.isArray(parsed.places)) return [{ day: '방문 장소', places: parsed }];
+
+            return [];
+        } catch (e) {
+            console.warn('[community-v2] planRouteJson 파싱 실패:', e);
+            return [];
+        }
+    }
+
+    function getPlanDayCount(post) {
+        if (post.planStartDate && post.planEndDate) {
+            try {
+                const s = new Date(post.planStartDate);
+                const e = new Date(post.planEndDate);
+                const diff = Math.floor((e - s) / (1000 * 60 * 60 * 24)) + 1;
+                if (diff > 0) return `${diff}일`;
+            } catch (e) {}
+        }
+        return '일정';
+    }
+
+    function getRoutePlaceCount(routeDays) {
+        let count = 0;
+
+        routeDays.forEach(day => {
+            if (Array.isArray(day.places)) count += day.places.length;
+            else if (Array.isArray(day.items)) count += day.items.length;
+        });
+
+        return count;
+    }
+
+    function ensurePlanPreviewModal() {
+        let modal = document.getElementById('communityPlanPreviewOverlay');
+        if (modal) return modal;
+
+        modal = document.createElement('div');
+        modal.id = 'communityPlanPreviewOverlay';
+        modal.className = 'community-plan-preview-overlay';
+        modal.innerHTML = `
+            <div class="community-plan-preview-modal">
+                <button class="community-plan-preview-close" type="button" onclick="closeCommunityPlanPreview()">×</button>
+
+                <div class="community-plan-preview-badges">
+                    <span>시즌 큐레이션</span>
+                    <span>초여름</span>
+                </div>
+
+                <h2 id="cpp-title">플랜 미리보기</h2>
+
+                <div class="community-plan-preview-stats">
+                    <div>
+                        <strong id="cpp-budget">예산 정보 없음</strong>
+                        <span>예산 합산 검증액</span>
+                    </div>
+                    <div>
+                        <strong id="cpp-place-count">0곳</strong>
+                        <span>방문 장소</span>
+                    </div>
+                    <div>
+                        <strong id="cpp-period">일정</strong>
+                        <span>일정</span>
+                    </div>
+                </div>
+
+                <div class="community-plan-preview-map">
+                    <div class="cpp-route-line"></div>
+                    <span class="cpp-pin cpp-pin-1"></span>
+                    <span class="cpp-pin cpp-pin-2"></span>
+                    <span class="cpp-pin cpp-pin-3"></span>
+                    <span class="cpp-map-text">Naver/Kakao Map API 렌더링 영역</span>
+                </div>
+
+                <div class="community-plan-preview-section">
+                    <h3>🏨 숙소 스냅샷</h3>
+                    <p id="cpp-stay">연동된 플랜의 숙소 정보가 없습니다.</p>
+                </div>
+
+                <div class="community-plan-preview-section">
+                    <h3>🍽 맛집 리스트 핵심글</h3>
+                    <div id="cpp-places"></div>
+                </div>
+
+                <div class="community-plan-preview-actions">
+                    <button type="button" class="cpp-main-btn" onclick="go('planner')">→ 해당 경로로 여행 계획하기</button>
+                    <button type="button" class="cpp-sub-btn" onclick="scrapCurrentPreviewPlan()">📌 스크랩</button>
+                </div>
+            </div>
+        `;
+
+        document.body.appendChild(modal);
+        return modal;
+    }
+
+    function renderPreviewModal(post) {
+        const routeDays = parseRouteJson(post.planRouteJson);
+        const placeCount = getRoutePlaceCount(routeDays);
+
+        document.getElementById('cpp-title').textContent =
+            post.planTitle || post.planDestination || '연동된 여행 플랜';
+
+        document.getElementById('cpp-budget').textContent =
+            formatMoney(post.planBudget);
+
+        document.getElementById('cpp-place-count').textContent =
+            placeCount ? `${placeCount}곳` : '0곳';
+
+        document.getElementById('cpp-period').textContent =
+            getPlanDayCount(post);
+
+        const stayEl = document.getElementById('cpp-stay');
+        stayEl.textContent = post.planDestination
+            ? `${post.planDestination} 여행 플랜입니다.`
+            : '연동된 플랜의 숙소 정보가 없습니다.';
+
+        const placesEl = document.getElementById('cpp-places');
+
+        if (!routeDays.length) {
+            placesEl.innerHTML = `
+                <div class="cpp-place-row">
+                    <span>📍</span>
+                    <strong>${escapeHtml(post.planDestination || post.planTitle || '방문 장소 정보 없음')}</strong>
+                    <em>상세 경로 정보 없음</em>
+                </div>
+            `;
+            return;
+        }
+
+        const rows = [];
+
+        routeDays.forEach((day, dayIndex) => {
+            const places = day.places || day.items || [];
+
+            places.slice(0, 4).forEach((place, idx) => {
+                const name = place.name || place.placeName || place.title || `장소 ${idx + 1}`;
+                const rating = place.rating || place.score || '';
+
+                rows.push(`
+                    <div class="cpp-place-row">
+                        <span>${idx % 2 === 0 ? '📍' : '☕'}</span>
+                        <strong>${escapeHtml(name)}</strong>
+                        <em>${rating ? '★ ' + escapeHtml(rating) : '플랜 장소'}</em>
+                    </div>
+                `);
+            });
+        });
+
+        placesEl.innerHTML = rows.length
+            ? rows.join('')
+            : `
+                <div class="cpp-place-row">
+                    <span>📍</span>
+                    <strong>${escapeHtml(post.planDestination || '방문 장소 정보 없음')}</strong>
+                    <em>상세 경로 정보 없음</em>
+                </div>
+            `;
+    }
+
+    function addPreviewButtonToPlanBadge(post) {
+        const badge = document.getElementById('pr-plan-badge');
+        if (!badge || !post || !post.planId) return;
+
+        _communityCurrentPlanPreview = post;
+
+        let btn = document.getElementById('btn-plan-preview');
+
+        if (!btn) {
+            btn = document.createElement('button');
+            btn.id = 'btn-plan-preview';
+            btn.type = 'button';
+            btn.className = 'btn-plan-preview';
+            btn.textContent = '미리보기';
+            btn.onclick = function () {
+                openCommunityPlanPreview();
+            };
+
+            badge.appendChild(btn);
+        }
+    }
+
+    window.openCommunityPlanPreview = function () {
+        if (!_communityCurrentPlanPreview) {
+            if (typeof toast === 'function') toast('연동된 플랜 정보를 찾을 수 없습니다.');
+            return;
+        }
+
+        const modal = ensurePlanPreviewModal();
+        renderPreviewModal(_communityCurrentPlanPreview);
+        modal.classList.add('open');
+    };
+
+    window.closeCommunityPlanPreview = function () {
+        const modal = document.getElementById('communityPlanPreviewOverlay');
+        if (modal) modal.classList.remove('open');
+    };
+
+    window.scrapCurrentPreviewPlan = function () {
+        if (typeof toast === 'function') toast('플랜 스크랩 기능은 추후 연결됩니다.');
+    };
+
+    /*
+     * 기존 openPostDetail 실행 후, 상세 응답을 다시 받아 미리보기 버튼 연결
+     * 기존 렌더링 로직은 유지하고 필요한 버튼만 추가한다.
+     */
+    const prevOpenPostDetailForPlanPreview = window.openPostDetail;
+
+    if (typeof prevOpenPostDetailForPlanPreview === 'function') {
+        window.openPostDetail = async function (postId) {
+            const result = await prevOpenPostDetailForPlanPreview.apply(this, arguments);
+
+            try {
+                const res = await api.get(`/api/posts/${postId}`);
+                if (res && res.success !== false && res.data) {
+                    addPreviewButtonToPlanBadge(res.data);
+                }
+            } catch (e) {
+                console.warn('[community-v2] 플랜 미리보기 버튼 연결 실패:', e);
+            }
+
+            return result;
+        };
+    }
+})();
+
+/* =============================================================================
+ * community v2 - 플랜 미리보기 Kakao 지도 렌더링 보완
+ * 목적:
+ * - 기존 미리보기 모달의 가짜 지도 영역을 실제 Kakao Map으로 교체
+ * - planTitle 또는 상세 페이지의 연동 플랜 텍스트를 키워드로 장소 검색
+ * - 기존 app_main.js / page_map.html 수정 없이 처리
+ * ============================================================================= */
+
+(function () {
+    'use strict';
+
+    const prevOpenCommunityPlanPreviewForMap = window.openCommunityPlanPreview;
+
+    window.openCommunityPlanPreview = function () {
+        if (typeof prevOpenCommunityPlanPreviewForMap === 'function') {
+            prevOpenCommunityPlanPreviewForMap.apply(this, arguments);
+        }
+
+        setTimeout(function () {
+            renderCommunityPlanKakaoMap();
+        }, 250);
+    };
+
+    function getPreviewMapKeyword() {
+        const title = document.getElementById('cpp-title')?.textContent?.trim();
+        if (title) return title;
+
+        const badgeText = document.getElementById('pr-plan-badge')?.innerText || '';
+        const lines = badgeText
+            .split('\n')
+            .map(v => v.trim())
+            .filter(Boolean)
+            .filter(v => v !== '연동된 플랜' && v !== '미리보기');
+
+        if (lines.length) return lines[0];
+
+        return '서울';
+    }
+
+    function renderCommunityPlanKakaoMap() {
+        const mapWrap = document.querySelector('.community-plan-preview-map');
+        if (!mapWrap) return;
+
+        mapWrap.innerHTML = `
+            <div id="communityPlanKakaoMap">
+                <div class="cpp-map-loading">지도 불러오는 중...</div>
+            </div>
+        `;
+
+        if (typeof kakao === 'undefined' || !kakao.maps) {
+            mapWrap.innerHTML = `
+                <div class="cpp-map-loading">
+                    Kakao 지도 SDK를 불러오지 못했습니다.
+                </div>
+            `;
+            console.warn('[community-v2] kakao.maps 없음');
+            return;
+        }
+
+        kakao.maps.load(function () {
+            const container = document.getElementById('communityPlanKakaoMap');
+            if (!container) return;
+
+            const defaultCenter = new kakao.maps.LatLng(37.5665, 126.9780);
+
+            const map = new kakao.maps.Map(container, {
+                center: defaultCenter,
+                level: 6
+            });
+
+            const keyword = getPreviewMapKeyword();
+
+            if (!kakao.maps.services || !kakao.maps.services.Places) {
+                new kakao.maps.Marker({
+                    map: map,
+                    position: defaultCenter
+                });
+                return;
+            }
+
+            const places = new kakao.maps.services.Places();
+
+            places.keywordSearch(keyword, function (data, status) {
+                if (status !== kakao.maps.services.Status.OK || !data || !data.length) {
+                    new kakao.maps.Marker({
+                        map: map,
+                        position: defaultCenter
+                    });
+                    return;
+                }
+
+                const bounds = new kakao.maps.LatLngBounds();
+
+                data.slice(0, 3).forEach(function (place, index) {
+                    const position = new kakao.maps.LatLng(place.y, place.x);
+
+                    new kakao.maps.Marker({
+                        map: map,
+                        position: position
+                    });
+
+                    bounds.extend(position);
+                });
+
+                map.setBounds(bounds);
+
+                setTimeout(function () {
+                    map.relayout();
+                    map.setBounds(bounds);
+                }, 100);
+            });
+        });
+    }
+
+    window.renderCommunityPlanKakaoMap = renderCommunityPlanKakaoMap;
 })();
