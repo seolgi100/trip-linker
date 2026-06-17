@@ -127,6 +127,16 @@ function openModal(id) {
   if (id === 'modal-auth') go('login');
 }
 
+/** 페이지별 CSS를 처음 진입할 때만 동적으로 로드 */
+function loadPageCSS(href) {
+  if (!document.querySelector(`link[href="${href}"]`)) {
+    const link = document.createElement('link');
+    link.rel  = 'stylesheet';
+    link.href = href;
+    document.head.appendChild(link);
+  }
+}
+
 /* ───────────────────────────────────────────────
  * 3. NAV 라우팅
  * ─────────────────────────────────────────────── */
@@ -149,6 +159,7 @@ function go(id, addToHistory) {
   //가계부 페이지 진입 시 항상 실제 데이터로 갱신
   //page_budget.html의 DOMContentLoaded가 채워둔 더미 데이터를 덮어씀
   if (id === 'ledger') {
+    loadPageCSS('/css/styles_budget.css');
     _populateLedgerTripCards();
     const selEl  = document.getElementById('ledger-selector');
     const mainEl = document.getElementById('ledger-main');
@@ -903,6 +914,148 @@ async function _loadExpenses(tripId) {
     if (!dateEl.value) dateEl.value = new Date().toISOString().slice(0, 10);
     if (d.startDate) dateEl.min = d.startDate;
     if (d.endDate)   dateEl.max = d.endDate;
+  }
+
+  // 여행 시작 전이면 지출 입력 비활성화
+  const addPanel    = document.getElementById('ledger-add-panel');
+  const notStarted  = document.getElementById('ledger-not-started');
+  const addForm     = document.getElementById('ledger-add-form');
+  if (addPanel && d.startDate) {
+    const today      = new Date().toISOString().slice(0, 10);
+    const tripStarted = d.startDate <= today;
+    if (notStarted) notStarted.style.display = tripStarted ? 'none' : 'block';
+    if (notStarted && !tripStarted) {
+      notStarted.textContent = `✈️ 여행 시작 전입니다. 지출 입력은 ${d.startDate.replace(/-/g, '.')} 이후부터 가능합니다.`;
+    }
+    if (addForm) addForm.style.display = tripStarted ? '' : 'none';
+  }
+}
+
+/** 지도 페이지 예산 탭 → 가계부 페이지로 이동 */
+function goToLedgerFromMap() {
+  const tripId = window._currentTripId;
+  if (!tripId) { toast('여행 정보를 불러오는 중입니다.'); return; }
+  _budgetSelectedTripId = +tripId;
+  sessionStorage.setItem('budgetSelectedTripId', tripId);
+  go('ledger');
+}
+
+/** 지도 페이지 예산 탭 - 실제 가계부 API와 연동 */
+async function _loadMapBudget() {
+  const tripId = window._currentTripId;
+  if (!tripId) return;
+
+  const itemsEl   = document.getElementById('map-budget-items');
+  const totalEl   = document.getElementById('map-budget-total');
+  const remainEl  = document.getElementById('map-budget-remaining');
+  const pieRing   = document.querySelector('#budgetView .pie-ring');
+  const pieLegend = document.querySelector('#budgetView .pie-legend');
+
+  if (itemsEl) itemsEl.innerHTML = '<div style="color:var(--text3);font-size:12px;padding:12px 0;text-align:center">불러오는 중...</div>';
+
+  const res = await api.get('/api/trips/' + tripId + '/expenses');
+  if (!res.success || !res.data) {
+    if (itemsEl) itemsEl.innerHTML = '<div style="color:var(--coral);font-size:12px;padding:12px 0;text-align:center">데이터를 불러올 수 없습니다.</div>';
+    return;
+  }
+  const d = res.data;
+
+  const cats     = d.categoryBudgets || [];
+  const totalEst = d.totalEstimatedAmount || 0;
+  const totalAct = d.totalActualAmount    || 0;
+  const hasAct   = totalAct > 0;
+  const maxAmt   = Math.max(...cats.map(c => Math.max(c.estimatedAmount || 0, c.actualAmount || 0)), 1);
+
+  // 바 차트 아이템
+  if (itemsEl) {
+    if (cats.length === 0) {
+      itemsEl.innerHTML = '<div style="color:var(--text3);font-size:12px;padding:12px 0;text-align:center">AI 예상 비용 데이터가 없습니다.</div>';
+    } else {
+      itemsEl.innerHTML = cats.map(c => {
+        const info   = _CATEGORY_MAP[c.category] || { label: c.category, color: '#aaa' };
+        const estW   = Math.round((c.estimatedAmount || 0) / maxAmt * 100) + '%';
+        const actW   = Math.round((c.actualAmount   || 0) / maxAmt * 100) + '%';
+        const isOver = (c.actualAmount || 0) > (c.estimatedAmount || 0);
+        return `
+          <div style="margin-bottom:14px">
+            <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:4px">
+              <span style="font-weight:700">${info.label}</span>
+              <span style="font-size:11px;color:var(--text3)">
+                예상 <strong style="color:${info.color}">${_fmtWon(c.estimatedAmount)}</strong>
+                ${hasAct ? ` · 실제 <strong style="color:${isOver ? 'var(--coral)' : 'var(--text)'}">${_fmtWon(c.actualAmount)}</strong>` : ''}
+              </span>
+            </div>
+            <div style="background:var(--border2);border-radius:4px;height:5px;margin-bottom:${hasAct ? '3' : '0'}px" title="예상 지출">
+              <div style="width:${estW};background:${info.color};opacity:.4;height:5px;border-radius:4px;transition:width .4s"></div>
+            </div>
+            ${hasAct ? `<div style="background:var(--border2);border-radius:4px;height:5px" title="실제 지출">
+              <div style="width:${actW};background:${info.color};height:5px;border-radius:4px;transition:width .4s"></div>
+            </div>` : ''}
+            ${isOver && hasAct ? `<div style="font-size:10px;color:var(--coral);margin-top:3px;font-weight:600">⚠ ${_fmtWon(c.actualAmount - c.estimatedAmount)} 초과</div>` : ''}
+          </div>`;
+      }).join('');
+    }
+  }
+
+  // 총액 라벨 + 금액
+  const totalLabelEl = document.getElementById('map-budget-total-label');
+  if (totalLabelEl) totalLabelEl.textContent = hasAct ? '실제 총액' : '예상 총액';
+  if (totalEl) {
+    if (hasAct) {
+      totalEl.innerHTML = `<span style="font-size:12px;color:var(--text3);font-weight:500">실제 </span>${_fmtWon(totalAct)}`;
+    } else {
+      totalEl.textContent = _fmtWon(totalEst);
+    }
+  }
+  const topBudgetEl = document.getElementById('totalBudget');
+  if (topBudgetEl) topBudgetEl.textContent = hasAct ? _fmtWon(totalAct) : _fmtWon(totalEst);
+
+  // 잔여 예산
+  if (remainEl) {
+    const base  = d.budget || totalEst;
+    const spent = hasAct ? totalAct : totalEst;
+    if (base > 0) {
+      const remain = base - spent;
+      remainEl.textContent       = remain >= 0
+        ? `예산 범위 내 ✓ 잔여 ${_fmtWon(remain)}`
+        : `⚠️ 예산 ${_fmtWon(-remain)} 초과`;
+      remainEl.style.background  = remain >= 0 ? 'var(--sage-pale)' : '#FEF3F2';
+      remainEl.style.borderColor = remain >= 0 ? 'var(--sage-l)'    : '#FECACA';
+      remainEl.style.color       = remain >= 0 ? 'var(--sage-d)'    : 'var(--coral)';
+    } else {
+      remainEl.textContent = hasAct ? '실제 지출 기준' : '예상 지출 기준';
+    }
+  }
+
+  // 파이 차트
+  const chartCats  = hasAct ? cats.filter(c => (c.actualAmount || 0) > 0)
+                            : cats.filter(c => (c.estimatedAmount || 0) > 0);
+  const chartTotal = hasAct ? totalAct : totalEst;
+
+  if (chartTotal > 0 && chartCats.length > 0) {
+    let deg = 0;
+    const segs = chartCats.map(c => {
+      const info  = _CATEGORY_MAP[c.category] || { color: '#aaa' };
+      const amt   = hasAct ? (c.actualAmount || 0) : (c.estimatedAmount || 0);
+      const start = deg;
+      deg += (amt / chartTotal) * 360;
+      return `${info.color} ${Math.round(start)}deg ${Math.round(deg)}deg`;
+    });
+    if (pieRing) {
+      pieRing.style.background   = `conic-gradient(${segs.join(', ')})`;
+      pieRing.style.borderRadius = '50%';
+    }
+    if (pieLegend) {
+      pieLegend.innerHTML = chartCats.map(c => {
+        const info = _CATEGORY_MAP[c.category] || { label: c.category, color: '#aaa' };
+        const amt  = hasAct ? (c.actualAmount || 0) : (c.estimatedAmount || 0);
+        const pct  = Math.round(amt / chartTotal * 100);
+        return `<div class="pie-leg-item"><div class="pie-dot" style="background:${info.color}"></div>${info.label} ${pct}%</div>`;
+      }).join('');
+    }
+  } else {
+    if (pieRing)   pieRing.style.background = '#E5E7EB';
+    if (pieLegend) pieLegend.innerHTML = '<div class="pie-leg-item" style="color:var(--text3)">데이터 없음</div>';
   }
 }
 
@@ -2296,7 +2449,7 @@ function switchMapTab(tab, btn) {
   btn.classList.add('on');
   const mv=document.getElementById('mapView'), bv=document.getElementById('budgetView');
   if(tab==='map'){mv.style.display='block';bv.style.display='none';}
-  else           {mv.style.display='none'; bv.style.display='block';}
+  else           {mv.style.display='none'; bv.style.display='block'; _loadMapBudget();}
 }
 
 
