@@ -270,6 +270,17 @@ async function _loadExpenses(tripId) {
         if (d.endDate)   dateEl.max = d.endDate;
     }
 
+    // 일정별 지출 현황 렌더링
+    const routeRes = await api.get('/api/trips/' + tripId + '/routes');
+    if (routeRes.success && routeRes.data) {
+        try {
+            const routeData = (typeof routeRes.data === 'string') ? JSON.parse(routeRes.data) : routeRes.data;
+            _renderItinerary(routeData, actualExps, d.startDate);
+        } catch(e) {
+            console.error('라우트 파싱 에러:', e);
+        }
+    }
+
     // 여행 시작 전이면 지출 입력 비활성화
     const addPanel    = document.getElementById('ledger-add-panel');
     const notStarted  = document.getElementById('ledger-not-started');
@@ -283,6 +294,93 @@ async function _loadExpenses(tripId) {
         }
         if (addForm) addForm.style.display = tripStarted ? '' : 'none';
     }
+}
+
+// 일정별 장소 목록 + Day별 예상/실제 비교 렌더링
+function _renderItinerary(routeData, actualExps, startDate) {
+    const container = document.getElementById('ledger-itinerary');
+    if (!container) return;
+    if (!routeData || !routeData.length) { container.style.display = 'none'; return; }
+
+    // 날짜별 실제 지출 합산
+    const actByDate = {};
+    actualExps.forEach(e => {
+        if (e.date) actByDate[e.date] = (actByDate[e.date] || 0) + (e.amount || 0);
+    });
+
+    const typeIcon = { stay: '🏨', food: '🍽️', cafe: '☕', tour: '📍', sight: '📍', attraction: '📍' };
+
+    const html = routeData.map((day, idx) => {
+        // Day N의 날짜 계산 (startDate + idx일)
+        let dayDate = null;
+        if (startDate) {
+            const d = new Date(startDate);
+            d.setDate(d.getDate() + idx);
+            dayDate = d.toISOString().slice(0, 10);
+        }
+
+        // 장소별 예상 금액 파싱 및 합산
+        const places = (day.places || []).filter(p => !p.transit);
+        let estTotal = 0;
+        places.forEach(p => {
+            if (p.sub) {
+                const m = p.sub.match(/₩\s*([\d,]+)(?:\s*[xX×*]\s*(\d+))?/);
+                if (m) estTotal += (parseInt(m[1].replace(/,/g, '')) || 0) * parseInt(m[2] || '1');
+            }
+        });
+        // 이동 비용도 포함
+        (day.places || []).filter(p => p.transit).forEach(p => {
+            const m = p.transit.match(/₩\s*([\d,]+)/);
+            if (m) estTotal += parseInt(m[1].replace(/,/g, '')) || 0;
+        });
+
+        const actTotal = dayDate ? (actByDate[dayDate] || 0) : 0;
+        const hasAct   = actTotal > 0;
+        const diff     = actTotal - estTotal;
+
+        const placeRows = places.map(p => {
+            let estAmt = 0;
+            if (p.sub) {
+                const m = p.sub.match(/₩\s*([\d,]+)(?:\s*[xX×*]\s*(\d+))?/);
+                if (m) estAmt = (parseInt(m[1].replace(/,/g, '')) || 0) * parseInt(m[2] || '1');
+            }
+            const icon = typeIcon[p.type] || '📍';
+            return `
+                <div style="display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid var(--border2)">
+                    <span style="font-size:13px;width:18px;text-align:center">${icon}</span>
+                    <span style="flex:1;font-size:12px;color:var(--text2);font-weight:500">${p.name || ''}</span>
+                    ${estAmt > 0 ? `<span style="font-size:11px;color:var(--text3)">${_fmtWon(estAmt)}</span>` : ''}
+                </div>`;
+        }).join('');
+
+        return `
+            <div style="background:var(--surface);border:1.5px solid var(--border);border-radius:var(--r);overflow:hidden;margin-bottom:10px">
+                <div style="display:flex;justify-content:space-between;align-items:center;padding:11px 16px;background:var(--cream2)">
+                    <div>
+                        <span style="font-size:13px;font-weight:700">${day.label || 'Day ' + day.day}</span>
+                        ${dayDate ? `<span style="font-size:11px;color:var(--text3);margin-left:7px">${dayDate.replace(/-/g, '.')}</span>` : ''}
+                    </div>
+                    <div style="font-size:11px;text-align:right">
+                        <span style="color:var(--text3)">예상 </span><strong>${_fmtWon(estTotal)}</strong>
+                        ${hasAct ? `
+                            <span style="margin-left:10px;color:var(--text3)">실제 </span>
+                            <strong style="color:${diff > 0 ? 'var(--coral)' : 'var(--sage)'}">${_fmtWon(actTotal)}</strong>
+                            <span style="margin-left:6px;font-weight:700;color:${diff > 0 ? 'var(--coral)' : 'var(--sage)'}">
+                                ${diff > 0 ? '⚠ ' + _fmtWon(diff) + ' 초과' : '✓ ' + _fmtWon(-diff) + ' 절약'}
+                            </span>
+                        ` : `<span style="margin-left:10px;color:var(--text3);font-size:10px">실제 미입력</span>`}
+                    </div>
+                </div>
+                <div style="padding:4px 16px 8px">
+                    ${placeRows || '<div style="font-size:12px;color:var(--text3);padding:8px 0">장소 정보 없음</div>'}
+                </div>
+            </div>`;
+    }).join('');
+
+    container.style.display = 'block';
+    container.innerHTML = `
+        <div style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:10px">📅 일정별 지출 현황</div>
+        ${html}`;
 }
 
 /** 지도 페이지 예산 탭 → 가계부 페이지로 이동 */
