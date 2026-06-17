@@ -1421,3 +1421,1101 @@
 
     window.renderCommunityPlanKakaoMap = renderCommunityPlanKakaoMap;
 })();
+
+/* =============================================================================
+ * community v2 - 플랜 미리보기 실제 경로 지도 렌더링 보완
+ * 목적:
+ * - 기존 키워드 검색 지도 대신 /api/trips/{planId}/routes 실제 경로 데이터 사용
+ * - 장소별 아이콘/라벨 표시
+ * - Day별 경로선 Polyline 표시
+ * - 기존 page_map.html 수정 없이 app_community_v2.js에서만 처리
+ * ============================================================================= */
+
+(function () {
+    'use strict';
+
+    const prevOpenCommunityPlanPreviewWithRoute = window.openCommunityPlanPreview;
+
+    function escapeHtml(value) {
+        return String(value ?? '')
+            .replaceAll('&', '&amp;')
+            .replaceAll('<', '&lt;')
+            .replaceAll('>', '&gt;')
+            .replaceAll('"', '&quot;')
+            .replaceAll("'", '&#039;');
+    }
+
+    function parseRouteData(value) {
+        if (!value) return [];
+
+        try {
+            if (typeof value === 'string') return JSON.parse(value);
+            if (Array.isArray(value)) return value;
+            if (Array.isArray(value?.data)) return value.data;
+            if (typeof value?.data === 'string') return JSON.parse(value.data);
+        } catch (e) {
+            console.warn('[community-v2] routeData 파싱 실패:', e);
+        }
+
+        return [];
+    }
+
+    function getActualPlaces(routeData) {
+        const places = [];
+
+        routeData.forEach(day => {
+            (day.places || []).forEach(p => {
+                if (p.transit) return;
+                if (!p.name) return;
+                if (p.lat === undefined || p.lng === undefined) return;
+
+                places.push({
+                    ...p,
+                    day: day.day,
+                    dayColor: getDayColor(day.day)
+                });
+            });
+        });
+
+        return places;
+    }
+
+    function getDayColor(day) {
+        const colors = ['#2D9E8A', '#A78BFA', '#22B5C4', '#F5A623', '#F472B6'];
+        const idx = Math.max(0, Number(day || 1) - 1) % colors.length;
+        return colors[idx];
+    }
+
+    function getPinColor(type) {
+        if (type === 'stay') return '#2D9E8A';
+        if (type === 'food' || type === 'lunch' || type === 'dinner' || type === 'breakfast') return '#F87171';
+        if (type === 'cafe') return '#7C3AED';
+        if (type === 'tour') return '#22B5C4';
+        return '#2D9E8A';
+    }
+
+    function ensureMapContainer() {
+        const mapWrap = document.querySelector('.community-plan-preview-map');
+        if (!mapWrap) return null;
+
+        mapWrap.innerHTML = `
+            <div id="communityPlanKakaoMap" style="width:100%;height:100%;border-radius:14px"></div>
+        `;
+
+        return document.getElementById('communityPlanKakaoMap');
+    }
+
+    function renderRouteList(routeData) {
+        const placesEl = document.getElementById('cpp-places');
+        if (!placesEl) return;
+
+        const rows = [];
+
+        routeData.forEach(day => {
+            rows.push(`
+                <div class="cpp-day-title">${escapeHtml(day.label || `Day ${day.day}`)}</div>
+            `);
+
+            (day.places || []).forEach(p => {
+                if (p.transit) {
+                    rows.push(`
+                        <div class="cpp-transit-row">${escapeHtml(p.transit)}</div>
+                    `);
+                    return;
+                }
+
+                rows.push(`
+                    <div class="cpp-place-row">
+                        <span>${escapeHtml(p.icon || '📍')}</span>
+                        <strong>${escapeHtml(p.name || '장소')}</strong>
+                        <em>${escapeHtml(p.time || p.sub || '플랜 장소')}</em>
+                    </div>
+                `);
+            });
+        });
+
+        placesEl.innerHTML = rows.join('');
+    }
+
+    function updatePreviewStatsFromRoute(routeData, post) {
+        const actualPlaces = getActualPlaces(routeData);
+
+        const placeCountEl = document.getElementById('cpp-place-count');
+        if (placeCountEl) placeCountEl.textContent = `${actualPlaces.length}곳`;
+
+        const budgetEl = document.getElementById('cpp-budget');
+        if (budgetEl) {
+            const total = routeData.reduce((sum, day) => {
+                const n = Number(String(day.budget || '').replace(/[^\d]/g, ''));
+                return sum + (Number.isNaN(n) ? 0 : n);
+            }, 0);
+
+            budgetEl.textContent = total > 0
+                ? '₩' + total.toLocaleString('ko-KR') + '~'
+                : (post?.planBudget ? '₩' + Number(post.planBudget).toLocaleString('ko-KR') + '~' : '예산 정보 없음');
+        }
+
+        const periodEl = document.getElementById('cpp-period');
+        if (periodEl) {
+            if (post?.planStartDate && post?.planEndDate) {
+                const s = new Date(post.planStartDate);
+                const e = new Date(post.planEndDate);
+                const diff = Math.floor((e - s) / (1000 * 60 * 60 * 24)) + 1;
+                periodEl.textContent = diff > 0 ? `${diff}일` : '일정';
+            }
+        }
+
+        const stayEl = document.getElementById('cpp-stay');
+        if (stayEl) {
+            const stay = actualPlaces.find(p => p.type === 'stay');
+            stayEl.textContent = stay
+                ? `${stay.name} · ${stay.sub || '숙소'}`
+                : `${post?.planTitle || '연동된 플랜'}입니다.`;
+        }
+    }
+
+    async function loadActualRouteDataForPreview(post) {
+        if (!post?.planId) return parseRouteData(post?.planRouteJson);
+
+        const res = await api.get(`/api/trips/${post.planId}/routes?t=${Date.now()}`);
+
+        if (res && res.success !== false && res.data) {
+            return parseRouteData(res.data);
+        }
+
+        return parseRouteData(post.planRouteJson);
+    }
+
+    function renderActualRouteMap(routeData) {
+        const container = ensureMapContainer();
+        if (!container) return;
+
+        const actualPlaces = getActualPlaces(routeData);
+
+        if (!actualPlaces.length) {
+            container.innerHTML = `
+                <div class="cpp-map-loading">표시할 장소 좌표가 없습니다.</div>
+            `;
+            return;
+        }
+
+        if (typeof kakao === 'undefined' || !kakao.maps) {
+            container.innerHTML = `
+                <div class="cpp-map-loading">Kakao 지도 SDK를 불러오지 못했습니다.</div>
+            `;
+            return;
+        }
+
+        kakao.maps.load(function () {
+            const first = actualPlaces[0];
+            const map = new kakao.maps.Map(container, {
+                center: new kakao.maps.LatLng(first.lat, first.lng),
+                level: 5
+            });
+
+            const bounds = new kakao.maps.LatLngBounds();
+
+            actualPlaces.forEach(place => {
+                const latlng = new kakao.maps.LatLng(place.lat, place.lng);
+                bounds.extend(latlng);
+
+                const pinColor = getPinColor(place.type);
+
+                const overlayContent = `
+                    <div style="cursor:pointer;position:relative;width:0;height:0;">
+                        <div style="
+                            position:absolute;
+                            left:-18px;
+                            top:-18px;
+                            width:36px;
+                            height:36px;
+                            box-sizing:border-box;
+                            border-radius:50%;
+                            background:${pinColor};
+                            display:flex;
+                            align-items:center;
+                            justify-content:center;
+                            font-size:16px;
+                            box-shadow:0 2px 8px rgba(0,0,0,.3);
+                            border:2.5px solid #fff;
+                            z-index:2;
+                        ">${escapeHtml(place.icon || '📍')}</div>
+
+                        <div style="
+                            position:absolute;
+                            top:20px;
+                            left:0;
+                            transform:translateX(-50%);
+                            background:#fff;
+                            border-radius:8px;
+                            padding:3px 8px;
+                            font-size:10px;
+                            font-weight:800;
+                            color:#111;
+                            box-shadow:0 2px 6px rgba(0,0,0,.25);
+                            white-space:nowrap;
+                            border:1px solid rgba(0,0,0,.08);
+                            z-index:1;
+                        ">${escapeHtml(place.name)}</div>
+                    </div>
+                `;
+
+                new kakao.maps.CustomOverlay({
+                    position: latlng,
+                    content: overlayContent,
+                    xAnchor: 0,
+                    yAnchor: 0
+                }).setMap(map);
+            });
+
+            routeData.forEach(day => {
+                const path = (day.places || [])
+                    .filter(p => !p.transit && p.name && p.lat !== undefined && p.lng !== undefined)
+                    .map(p => new kakao.maps.LatLng(p.lat, p.lng));
+
+                if (path.length < 2) return;
+
+                new kakao.maps.Polyline({
+                    path: path,
+                    strokeWeight: 5,
+                    strokeColor: getDayColor(day.day),
+                    strokeOpacity: 0.55,
+                    strokeStyle: 'solid'
+                }).setMap(map);
+            });
+
+            map.setBounds(bounds);
+
+            setTimeout(function () {
+                map.relayout();
+                map.setBounds(bounds);
+            }, 100);
+        });
+    }
+
+    window.openCommunityPlanPreview = async function () {
+        if (typeof prevOpenCommunityPlanPreviewWithRoute === 'function') {
+            prevOpenCommunityPlanPreviewWithRoute.apply(this, arguments);
+        }
+
+        const post = window._communityCurrentPlanPreview || window._openedPlanPreviewPost || null;
+
+        /*
+         * 기존 코드에서 _communityCurrentPlanPreview가 지역 변수로만 관리되는 경우를 대비해
+         * 현재 postId로 다시 상세 조회한다.
+         */
+        let currentPost = post;
+
+        if (!currentPost) {
+            const postId = window._currentPostId || window._openedPostId;
+            if (postId) {
+                const res = await api.get(`/api/posts/${postId}`);
+                if (res && res.success !== false) currentPost = res.data;
+            }
+        }
+
+        if (!currentPost) {
+            if (typeof toast === 'function') toast('연동된 플랜 정보를 찾을 수 없습니다.');
+            return;
+        }
+
+        const routeData = await loadActualRouteDataForPreview(currentPost);
+
+        updatePreviewStatsFromRoute(routeData, currentPost);
+        renderRouteList(routeData);
+        renderActualRouteMap(routeData);
+    };
+})();
+
+/* =============================================================================
+ * community v2 - 플랜 미리보기 최종 지도 렌더링 보정
+ * 목적:
+ * - 기존 keywordSearch 기반 지도 렌더링을 사용하지 않음
+ * - /api/trips/{planId}/routes 실제 lat/lng 기반으로 지도 표시
+ * - 커스텀 아이콘/라벨/경로선 표시
+ * - "해당 경로로 여행 계획하기" 클릭 시 모달 닫고 이동
+ * ============================================================================= */
+
+(function () {
+    'use strict';
+
+    function escapeHtml(value) {
+        return String(value ?? '')
+            .replaceAll('&', '&amp;')
+            .replaceAll('<', '&lt;')
+            .replaceAll('>', '&gt;')
+            .replaceAll('"', '&quot;')
+            .replaceAll("'", '&#039;');
+    }
+
+    function parseRouteData(value) {
+        try {
+            if (!value) return [];
+            if (Array.isArray(value)) return value;
+            if (typeof value === 'string') return JSON.parse(value);
+            if (typeof value.data === 'string') return JSON.parse(value.data);
+            if (Array.isArray(value.data)) return value.data;
+        } catch (e) {
+            console.warn('[community-v2] routeData parse fail:', e);
+        }
+        return [];
+    }
+
+    function getPinColor(type) {
+        if (type === 'stay') return '#2D9E8A';
+        if (type === 'food' || type === 'lunch' || type === 'dinner' || type === 'breakfast') return '#F87171';
+        if (type === 'cafe') return '#7C3AED';
+        if (type === 'tour') return '#22B5C4';
+        return '#2D9E8A';
+    }
+
+    function getDayColor(day) {
+        const colors = ['#2D9E8A', '#A78BFA', '#22B5C4', '#F5A623', '#F472B6'];
+        return colors[(Number(day || 1) - 1) % colors.length];
+    }
+
+    function getPlaces(routeData) {
+        const places = [];
+
+        routeData.forEach(day => {
+            (day.places || []).forEach(p => {
+                if (p.transit) return;
+                if (!p.name) return;
+                if (p.lat === undefined || p.lng === undefined) return;
+
+                places.push({
+                    ...p,
+                    day: day.day
+                });
+            });
+        });
+
+        return places;
+    }
+
+    function ensurePreviewModal() {
+        let overlay = document.getElementById('communityPlanPreviewOverlay');
+
+        if (!overlay) {
+            overlay = document.createElement('div');
+            overlay.id = 'communityPlanPreviewOverlay';
+            overlay.className = 'community-plan-preview-overlay';
+            document.body.appendChild(overlay);
+        }
+
+        overlay.innerHTML = `
+            <div class="community-plan-preview-modal">
+                <button class="community-plan-preview-close" type="button" onclick="closeCommunityPlanPreview()">×</button>
+
+                <div class="community-plan-preview-badges">
+                    <span>시즌 큐레이션</span>
+                    <span>초여름</span>
+                </div>
+
+                <h2 id="cpp-title">플랜 미리보기</h2>
+
+                <div class="community-plan-preview-stats">
+                    <div>
+                        <strong id="cpp-budget">예산 정보 없음</strong>
+                        <span>예산 합산 검증액</span>
+                    </div>
+                    <div>
+                        <strong id="cpp-place-count">0곳</strong>
+                        <span>방문 장소</span>
+                    </div>
+                    <div>
+                        <strong id="cpp-period">일정</strong>
+                        <span>일정</span>
+                    </div>
+                </div>
+
+                <div class="community-plan-preview-map">
+                    <div id="communityPlanKakaoMap" style="width:100%;height:100%;border-radius:14px"></div>
+                </div>
+
+                <div class="community-plan-preview-section">
+                    <h3>🏨 숙소 스냅샷</h3>
+                    <p id="cpp-stay">연동된 플랜의 숙소 정보가 없습니다.</p>
+                </div>
+
+                <div class="community-plan-preview-section">
+                    <h3>🍽 맛집 리스트 핵심글</h3>
+                    <div id="cpp-places"></div>
+                </div>
+
+                <div class="community-plan-preview-actions">
+                    <button type="button" class="cpp-main-btn" id="cpp-go-planner-btn">→ 해당 경로로 여행 계획하기</button>
+                    <button type="button" class="cpp-sub-btn" onclick="scrapCurrentPreviewPlan()">📌 스크랩</button>
+                </div>
+            </div>
+        `;
+
+        const goBtn = document.getElementById('cpp-go-planner-btn');
+        if (goBtn) {
+            goBtn.onclick = function () {
+                closeCommunityPlanPreview();
+                if (typeof go === 'function') go('planner');
+            };
+        }
+
+        return overlay;
+    }
+
+    function formatBudget(routeData, fallbackBudget) {
+        const total = routeData.reduce((sum, day) => {
+            const n = Number(String(day.budget || '').replace(/[^\d]/g, ''));
+            return sum + (Number.isNaN(n) ? 0 : n);
+        }, 0);
+
+        if (total > 0) return `₩${total.toLocaleString('ko-KR')}~`;
+
+        if (fallbackBudget) {
+            const n = Number(fallbackBudget);
+            if (!Number.isNaN(n)) return `₩${n.toLocaleString('ko-KR')}~`;
+        }
+
+        return '예산 정보 없음';
+    }
+
+    function getDayCount(post) {
+        if (!post?.planStartDate || !post?.planEndDate) return '일정';
+
+        const s = new Date(post.planStartDate);
+        const e = new Date(post.planEndDate);
+        const diff = Math.floor((e - s) / (1000 * 60 * 60 * 24)) + 1;
+
+        return diff > 0 ? `${diff}일` : '일정';
+    }
+
+    function renderPreviewInfo(post, routeData) {
+        const places = getPlaces(routeData);
+
+        document.getElementById('cpp-title').textContent =
+            post.planTitle || post.planDestination || '연동된 여행 플랜';
+
+        document.getElementById('cpp-budget').textContent =
+            formatBudget(routeData, post.planBudget);
+
+        document.getElementById('cpp-place-count').textContent =
+            `${places.length}곳`;
+
+        document.getElementById('cpp-period').textContent =
+            getDayCount(post);
+
+        const stay = places.find(p => p.type === 'stay');
+        document.getElementById('cpp-stay').textContent = stay
+            ? `${stay.name} · ${stay.sub || '숙소'}`
+            : `${post.planTitle || '연동된 플랜'}입니다.`;
+    }
+
+    function renderPreviewList(routeData) {
+        const box = document.getElementById('cpp-places');
+        if (!box) return;
+
+        const html = [];
+
+        routeData.forEach(day => {
+            html.push(`<div class="cpp-day-title">${escapeHtml(day.label || `Day ${day.day}`)}</div>`);
+
+            (day.places || []).forEach(p => {
+                if (p.transit) {
+                    html.push(`<div class="cpp-transit-row">${escapeHtml(p.transit)}</div>`);
+                    return;
+                }
+
+                html.push(`
+                    <div class="cpp-place-row">
+                        <span>${escapeHtml(p.icon || '📍')}</span>
+                        <strong>${escapeHtml(p.name || '장소')}</strong>
+                        <em>${escapeHtml(p.time || p.sub || '플랜 장소')}</em>
+                    </div>
+                `);
+            });
+        });
+
+        box.innerHTML = html.join('');
+    }
+
+    function renderActualKakaoMap(routeData) {
+        const container = document.getElementById('communityPlanKakaoMap');
+        if (!container) return;
+
+        const places = getPlaces(routeData);
+
+        if (!places.length) {
+            container.innerHTML = `<div class="cpp-map-loading">표시할 장소 좌표가 없습니다.</div>`;
+            return;
+        }
+
+        if (typeof kakao === 'undefined' || !kakao.maps) {
+            container.innerHTML = `<div class="cpp-map-loading">Kakao 지도 SDK를 불러오지 못했습니다.</div>`;
+            return;
+        }
+
+        kakao.maps.load(function () {
+            container.innerHTML = '';
+
+            const first = places[0];
+
+            const map = new kakao.maps.Map(container, {
+                center: new kakao.maps.LatLng(first.lat, first.lng),
+                level: 5
+            });
+
+            const bounds = new kakao.maps.LatLngBounds();
+
+            places.forEach(place => {
+                const position = new kakao.maps.LatLng(place.lat, place.lng);
+                bounds.extend(position);
+
+                const color = getPinColor(place.type);
+
+                const content = `
+                    <div style="cursor:pointer;position:relative;width:0;height:0;">
+                        <div style="
+                            position:absolute;
+                            left:-18px;
+                            top:-18px;
+                            width:36px;
+                            height:36px;
+                            box-sizing:border-box;
+                            border-radius:50%;
+                            background:${color};
+                            display:flex;
+                            align-items:center;
+                            justify-content:center;
+                            font-size:16px;
+                            box-shadow:0 2px 8px rgba(0,0,0,.3);
+                            border:2.5px solid #fff;
+                            z-index:2;
+                        ">${escapeHtml(place.icon || '📍')}</div>
+
+                        <div style="
+                            position:absolute;
+                            top:20px;
+                            left:0;
+                            transform:translateX(-50%);
+                            background:#fff;
+                            border-radius:8px;
+                            padding:3px 8px;
+                            font-size:10px;
+                            font-weight:800;
+                            color:#111;
+                            box-shadow:0 2px 6px rgba(0,0,0,.3);
+                            white-space:nowrap;
+                            border:1px solid rgba(0,0,0,.08);
+                            z-index:1;
+                        ">${escapeHtml(place.name)}</div>
+                    </div>
+                `;
+
+                new kakao.maps.CustomOverlay({
+                    map: map,
+                    position: position,
+                    content: content,
+                    xAnchor: 0,
+                    yAnchor: 0
+                });
+            });
+
+            routeData.forEach(day => {
+                const path = (day.places || [])
+                    .filter(p => !p.transit && p.name && p.lat !== undefined && p.lng !== undefined)
+                    .map(p => new kakao.maps.LatLng(p.lat, p.lng));
+
+                if (path.length < 2) return;
+
+                new kakao.maps.Polyline({
+                    map: map,
+                    path: path,
+                    strokeWeight: 5,
+                    strokeColor: getDayColor(day.day),
+                    strokeOpacity: 0.65,
+                    strokeStyle: 'solid'
+                });
+            });
+
+            map.setBounds(bounds);
+
+            setTimeout(function () {
+                map.relayout();
+                map.setBounds(bounds);
+            }, 150);
+        });
+    }
+
+    async function getCurrentPostForPreview() {
+        const postId = window._currentPostId || window._openedPostId;
+
+        if (!postId) return null;
+
+        const res = await api.get(`/api/posts/${postId}`);
+
+        if (res && res.success !== false && res.data) return res.data;
+
+        return null;
+    }
+
+    async function getRouteData(post) {
+        if (!post?.planId) return parseRouteData(post?.planRouteJson);
+
+        const res = await api.get(`/api/trips/${post.planId}/routes?t=${Date.now()}`);
+
+        if (res && res.success !== false && res.data) {
+            return parseRouteData(res.data);
+        }
+
+        return parseRouteData(post.planRouteJson);
+    }
+
+    window.openCommunityPlanPreview = async function () {
+        const post = await getCurrentPostForPreview();
+
+        if (!post || !post.planId) {
+            if (typeof toast === 'function') toast('연동된 플랜 정보를 찾을 수 없습니다.');
+            return;
+        }
+
+        const overlay = ensurePreviewModal();
+        overlay.classList.add('open');
+
+        const routeData = await getRouteData(post);
+
+        renderPreviewInfo(post, routeData);
+        renderPreviewList(routeData);
+        renderActualKakaoMap(routeData);
+    };
+
+    window.closeCommunityPlanPreview = function () {
+        const overlay = document.getElementById('communityPlanPreviewOverlay');
+        if (overlay) overlay.classList.remove('open');
+    };
+})();
+
+/* =============================================================================
+ * community v2 - 플랜 미리보기 지도 최종 보정
+ * 목적:
+ * - lat/lng가 없거나 키 이름이 달라도 장소명으로 Kakao 검색
+ * - 방문 장소 수를 좌표 여부와 상관없이 정상 계산
+ * - 장소 아이콘/라벨/경로선 표시
+ * ============================================================================= */
+
+(function () {
+    'use strict';
+
+    function escapeHtml(value) {
+        return String(value ?? '')
+            .replaceAll('&', '&amp;')
+            .replaceAll('<', '&lt;')
+            .replaceAll('>', '&gt;')
+            .replaceAll('"', '&quot;')
+            .replaceAll("'", '&#039;');
+    }
+
+    function parseRouteData(value) {
+        try {
+            if (!value) return [];
+            if (Array.isArray(value)) return value;
+            if (typeof value === 'string') return JSON.parse(value);
+            if (typeof value.data === 'string') return JSON.parse(value.data);
+            if (Array.isArray(value.data)) return value.data;
+        } catch (e) {
+            console.warn('[community-v2] routeData parse fail:', e);
+        }
+        return [];
+    }
+
+    function getCoord(place) {
+        const lat =
+            place.lat ??
+            place.latitude ??
+            place.placeLat ??
+            place.y;
+
+        const lng =
+            place.lng ??
+            place.longitude ??
+            place.placeLng ??
+            place.x;
+
+        const nLat = Number(lat);
+        const nLng = Number(lng);
+
+        if (Number.isNaN(nLat) || Number.isNaN(nLng)) return null;
+
+        return { lat: nLat, lng: nLng };
+    }
+
+    function getAllPlaces(routeData) {
+        const places = [];
+
+        routeData.forEach(day => {
+            (day.places || []).forEach(p => {
+                if (p.transit) return;
+                if (!p.name) return;
+
+                places.push({
+                    ...p,
+                    day: day.day,
+                    coord: getCoord(p)
+                });
+            });
+        });
+
+        return places;
+    }
+
+    function getPinColor(type) {
+        if (type === 'stay') return '#2D9E8A';
+        if (type === 'food' || type === 'lunch' || type === 'dinner' || type === 'breakfast') return '#F87171';
+        if (type === 'cafe') return '#7C3AED';
+        if (type === 'tour') return '#22B5C4';
+        return '#2D9E8A';
+    }
+
+    function getDayColor(day) {
+        const colors = ['#2D9E8A', '#A78BFA', '#22B5C4', '#F5A623', '#F472B6'];
+        return colors[(Number(day || 1) - 1) % colors.length];
+    }
+
+    function getDayCount(post) {
+        if (!post?.planStartDate || !post?.planEndDate) return '일정';
+
+        const s = new Date(post.planStartDate);
+        const e = new Date(post.planEndDate);
+        const diff = Math.floor((e - s) / (1000 * 60 * 60 * 24)) + 1;
+
+        return diff > 0 ? `${diff}일` : '일정';
+    }
+
+    function formatBudget(routeData, fallbackBudget) {
+        const total = routeData.reduce((sum, day) => {
+            const n = Number(String(day.budget || '').replace(/[^\d]/g, ''));
+            return sum + (Number.isNaN(n) ? 0 : n);
+        }, 0);
+
+        if (total > 0) return `₩${total.toLocaleString('ko-KR')}~`;
+
+        if (fallbackBudget) {
+            const n = Number(fallbackBudget);
+            if (!Number.isNaN(n)) return `₩${n.toLocaleString('ko-KR')}~`;
+        }
+
+        return '예산 정보 없음';
+    }
+
+    function ensurePreviewModal() {
+        let overlay = document.getElementById('communityPlanPreviewOverlay');
+
+        if (!overlay) {
+            overlay = document.createElement('div');
+            overlay.id = 'communityPlanPreviewOverlay';
+            overlay.className = 'community-plan-preview-overlay';
+            document.body.appendChild(overlay);
+        }
+
+        overlay.innerHTML = `
+            <div class="community-plan-preview-modal">
+                <button class="community-plan-preview-close" type="button" onclick="closeCommunityPlanPreview()">×</button>
+
+                <div class="community-plan-preview-badges">
+                    <span>시즌 큐레이션</span>
+                    <span>초여름</span>
+                </div>
+
+                <h2 id="cpp-title">플랜 미리보기</h2>
+
+                <div class="community-plan-preview-stats">
+                    <div>
+                        <strong id="cpp-budget">예산 정보 없음</strong>
+                        <span>예산 합산 검증액</span>
+                    </div>
+                    <div>
+                        <strong id="cpp-place-count">0곳</strong>
+                        <span>방문 장소</span>
+                    </div>
+                    <div>
+                        <strong id="cpp-period">일정</strong>
+                        <span>일정</span>
+                    </div>
+                </div>
+
+                <div class="community-plan-preview-map">
+                    <div id="communityPlanKakaoMap" style="width:100%;height:100%;border-radius:14px"></div>
+                </div>
+
+                <div class="community-plan-preview-section">
+                    <h3>🏨 숙소 스냅샷</h3>
+                    <p id="cpp-stay">연동된 플랜의 숙소 정보가 없습니다.</p>
+                </div>
+
+                <div class="community-plan-preview-section">
+                    <h3>🍽 맛집 리스트 핵심글</h3>
+                    <div id="cpp-places"></div>
+                </div>
+
+                <div class="community-plan-preview-actions">
+                    <button type="button" class="cpp-main-btn" id="cpp-go-planner-btn">→ 해당 경로로 여행 계획하기</button>
+                    <button type="button" class="cpp-sub-btn" onclick="scrapCurrentPreviewPlan()">📌 스크랩</button>
+                </div>
+            </div>
+        `;
+
+        const goBtn = document.getElementById('cpp-go-planner-btn');
+        if (goBtn) {
+            goBtn.onclick = function () {
+                closeCommunityPlanPreview();
+                if (typeof go === 'function') go('planner');
+            };
+        }
+
+        return overlay;
+    }
+
+    function renderPreviewInfo(post, routeData) {
+        const places = getAllPlaces(routeData);
+
+        document.getElementById('cpp-title').textContent =
+            post.planTitle || post.planDestination || '연동된 여행 플랜';
+
+        document.getElementById('cpp-budget').textContent =
+            formatBudget(routeData, post.planBudget);
+
+        document.getElementById('cpp-place-count').textContent =
+            `${places.length}곳`;
+
+        document.getElementById('cpp-period').textContent =
+            getDayCount(post);
+
+        const stay = places.find(p => p.type === 'stay');
+        document.getElementById('cpp-stay').textContent = stay
+            ? `${stay.name} · ${stay.sub || '숙소'}`
+            : `${post.planTitle || '연동된 플랜'}입니다.`;
+    }
+
+    function renderPreviewList(routeData) {
+        const box = document.getElementById('cpp-places');
+        if (!box) return;
+
+        const html = [];
+
+        routeData.forEach(day => {
+            html.push(`<div class="cpp-day-title">${escapeHtml(day.label || `Day ${day.day}`)}</div>`);
+
+            (day.places || []).forEach(p => {
+                if (p.transit) {
+                    html.push(`<div class="cpp-transit-row">${escapeHtml(p.transit)}</div>`);
+                    return;
+                }
+
+                html.push(`
+                    <div class="cpp-place-row">
+                        <span>${escapeHtml(p.icon || '📍')}</span>
+                        <strong>${escapeHtml(p.name || '장소')}</strong>
+                        <em>${escapeHtml(p.time || p.sub || '플랜 장소')}</em>
+                    </div>
+                `);
+            });
+        });
+
+        box.innerHTML = html.join('');
+    }
+
+    function searchPlaceByName(place, callback) {
+        if (place.coord) {
+            callback(place.coord);
+            return;
+        }
+
+        if (!kakao.maps.services || !kakao.maps.services.Places) {
+            callback(null);
+            return;
+        }
+
+        const ps = new kakao.maps.services.Places();
+
+        ps.keywordSearch(place.name, function (data, status) {
+            if (status === kakao.maps.services.Status.OK && data && data.length) {
+                callback({
+                    lat: Number(data[0].y),
+                    lng: Number(data[0].x)
+                });
+            } else {
+                callback(null);
+            }
+        });
+    }
+
+    function renderActualKakaoMap(routeData) {
+        const container = document.getElementById('communityPlanKakaoMap');
+        if (!container) return;
+
+        const places = getAllPlaces(routeData);
+
+        if (!places.length) {
+            container.innerHTML = `<div class="cpp-map-loading">표시할 장소가 없습니다.</div>`;
+            return;
+        }
+
+        if (typeof kakao === 'undefined' || !kakao.maps) {
+            container.innerHTML = `<div class="cpp-map-loading">Kakao 지도 SDK를 불러오지 못했습니다.</div>`;
+            return;
+        }
+
+        kakao.maps.load(function () {
+            container.innerHTML = '';
+
+            const defaultCenter = new kakao.maps.LatLng(37.5665, 126.9780);
+
+            const map = new kakao.maps.Map(container, {
+                center: defaultCenter,
+                level: 6
+            });
+
+            const bounds = new kakao.maps.LatLngBounds();
+            const placedByDay = {};
+            let resolvedCount = 0;
+
+            places.forEach(place => {
+                searchPlaceByName(place, function (coord) {
+                    resolvedCount++;
+
+                    if (coord) {
+                        const position = new kakao.maps.LatLng(coord.lat, coord.lng);
+                        bounds.extend(position);
+
+                        if (!placedByDay[place.day]) placedByDay[place.day] = [];
+                        placedByDay[place.day].push({
+                            ...place,
+                            position
+                        });
+
+                        const color = getPinColor(place.type);
+
+                        const content = `
+                            <div style="cursor:pointer;position:relative;width:0;height:0;">
+                                <div style="
+                                    position:absolute;
+                                    left:-18px;
+                                    top:-18px;
+                                    width:36px;
+                                    height:36px;
+                                    box-sizing:border-box;
+                                    border-radius:50%;
+                                    background:${color};
+                                    display:flex;
+                                    align-items:center;
+                                    justify-content:center;
+                                    font-size:16px;
+                                    box-shadow:0 2px 8px rgba(0,0,0,.3);
+                                    border:2.5px solid #fff;
+                                    z-index:2;
+                                ">${escapeHtml(place.icon || '📍')}</div>
+
+                                <div style="
+                                    position:absolute;
+                                    top:20px;
+                                    left:0;
+                                    transform:translateX(-50%);
+                                    background:#fff;
+                                    border-radius:8px;
+                                    padding:3px 8px;
+                                    font-size:10px;
+                                    font-weight:800;
+                                    color:#111;
+                                    box-shadow:0 2px 6px rgba(0,0,0,.3);
+                                    white-space:nowrap;
+                                    border:1px solid rgba(0,0,0,.08);
+                                    z-index:1;
+                                ">${escapeHtml(place.name)}</div>
+                            </div>
+                        `;
+
+                        new kakao.maps.CustomOverlay({
+                            map,
+                            position,
+                            content,
+                            xAnchor: 0,
+                            yAnchor: 0
+                        });
+                    }
+
+                    if (resolvedCount === places.length) {
+                        const days = Object.keys(placedByDay);
+
+                        days.forEach(day => {
+                            const path = placedByDay[day].map(p => p.position);
+
+                            if (path.length < 2) return;
+
+                            new kakao.maps.Polyline({
+                                map,
+                                path,
+                                strokeWeight: 5,
+                                strokeColor: getDayColor(day),
+                                strokeOpacity: 0.65,
+                                strokeStyle: 'solid'
+                            });
+                        });
+
+                        if (days.length > 0) {
+                            map.setBounds(bounds);
+
+                            setTimeout(function () {
+                                map.relayout();
+                                map.setBounds(bounds);
+                            }, 150);
+                        } else {
+                            container.innerHTML = `<div class="cpp-map-loading">지도에 표시할 장소를 찾지 못했습니다.</div>`;
+                        }
+                    }
+                });
+            });
+        });
+    }
+
+    async function getCurrentPostForPreview() {
+        const postId = window._currentPostId || window._openedPostId;
+        if (!postId) return null;
+
+        const res = await api.get(`/api/posts/${postId}`);
+        if (res && res.success !== false && res.data) return res.data;
+
+        return null;
+    }
+
+    async function getRouteData(post) {
+        if (!post?.planId) return parseRouteData(post?.planRouteJson);
+
+        const res = await api.get(`/api/trips/${post.planId}/routes?t=${Date.now()}`);
+
+        if (res && res.success !== false && res.data) {
+            return parseRouteData(res.data);
+        }
+
+        return parseRouteData(post.planRouteJson);
+    }
+
+    window.openCommunityPlanPreview = async function () {
+        const post = await getCurrentPostForPreview();
+
+        if (!post || !post.planId) {
+            if (typeof toast === 'function') toast('연동된 플랜 정보를 찾을 수 없습니다.');
+            return;
+        }
+
+        const overlay = ensurePreviewModal();
+        overlay.classList.add('open');
+
+        const routeData = await getRouteData(post);
+
+        renderPreviewInfo(post, routeData);
+        renderPreviewList(routeData);
+        renderActualKakaoMap(routeData);
+    };
+
+    window.closeCommunityPlanPreview = function () {
+        const overlay = document.getElementById('communityPlanPreviewOverlay');
+        if (overlay) overlay.classList.remove('open');
+    };
+})();

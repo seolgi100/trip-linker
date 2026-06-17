@@ -569,3 +569,20 @@
         margin-top: 10px;
     }
 }
+
+.cpp-day-title {
+    margin: 12px 0 8px;
+    font-size: 12px;
+    font-weight: 900;
+    color: var(--sage-d);
+}
+
+.cpp-transit-row {
+    margin: 6px 0 8px;
+    padding: 8px 12px;
+    border-radius: 10px;
+    background: var(--sage-pale);
+    color: var(--sage-d);
+    font-size: 11px;
+    font-weight: 700;
+}
