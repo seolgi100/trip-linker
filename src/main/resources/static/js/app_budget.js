@@ -444,7 +444,10 @@ function _drawExpensePage() {
               <td style="padding:7px 4px"><span style="background:${info.color}22;color:${info.color};border-radius:4px;padding:2px 8px;font-size:11px;font-weight:600">${info.label}</span></td>
               <td style="padding:7px 4px;color:var(--text2)">${e.description || '-'}</td>
               <td style="padding:7px 4px;text-align:right;font-weight:700">${_fmtWon(e.amount)}</td>
-              <td style="padding:7px 4px"><button onclick="startEditExpense(${e.id},'${e.category}',${e.amount},'${e.date || ''}','${safeDesc}')" style="font-size:11px;padding:3px 10px;background:var(--sage-pale);border:1.5px solid var(--sage-l);border-radius:5px;cursor:pointer;color:var(--sage-d);font-weight:600;white-space:nowrap">수정</button></td>
+              <td style="padding:7px 4px;white-space:nowrap">
+                <button onclick="startEditExpense(${e.id},'${e.category}',${e.amount},'${e.date || ''}','${safeDesc}')" style="font-size:11px;padding:3px 10px;background:var(--sage-pale);border:1.5px solid var(--sage-l);border-radius:5px;cursor:pointer;color:var(--sage-d);font-weight:600">수정</button>
+                <button onclick="deleteExpense(${e.id})" style="font-size:11px;padding:3px 10px;background:#FEF2F2;border:1.5px solid #FECACA;border-radius:5px;cursor:pointer;color:#DC2626;font-weight:600;margin-left:4px">삭제</button>
+              </td>
             </tr>`;
         }).join('')}
         </tbody>
@@ -528,6 +531,15 @@ async function saveEditExpense(id) {
     const res = await api.put('/api/trips/' + _budgetSelectedTripId + '/expenses/' + id, payload);
     if (!res.success) { toast('수정 실패: ' + res.message); return; }
     toast('수정됐습니다.');
+    await _loadExpenses(_budgetSelectedTripId);
+}
+
+//실제 지출 삭제 - DELETE /api/trips/{tripId}/expenses/{expenseId}
+async function deleteExpense(id) {
+    if (!confirm('이 지출 내역을 삭제하시겠습니까?')) return;
+    const res = await api.del('/api/trips/' + _budgetSelectedTripId + '/expenses/' + id);
+    if (!res.success) { toast('삭제 실패: ' + res.message); return; }
+    toast('삭제됐습니다.');
     await _loadExpenses(_budgetSelectedTripId);
 }
 
