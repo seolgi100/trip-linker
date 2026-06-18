@@ -32,6 +32,16 @@
         return null;
     }
 
+    function getCurrentPostCategory() {
+        const category = window._currentPostCategory || 'ROUTE';
+
+        if (['ROUTE', 'STAY', 'FOOD', 'TOUR', 'CAFE'].includes(category)) {
+            return category;
+        }
+
+        return 'ROUTE';
+    }
+
     /*
      * 로그인 확인
      */
@@ -82,7 +92,9 @@
             return;
         }
 
-        const res = await api.post(`/api/posts/${postId}/scraps?category=ROUTE`, {});
+        const category = getCurrentPostCategory();
+
+        const res = await api.post(`/api/posts/${postId}/scraps?category=${category}`, {});
 
         if (res && res.success !== false) {
             if (typeof toast === 'function') toast('스크랩했습니다.');
@@ -351,6 +363,7 @@
 
         window._currentPostId = post.postId;
         window._openedPostId = post.postId;
+        window._currentPostCategory = post.category || 'ROUTE';
 
         const tags = parseStyleTags(post.styleTags);
 
@@ -545,20 +558,6 @@
     setTimeout(wrapSetCommTab, 300);
     setTimeout(wrapSetCommTab, 800);
     setTimeout(wrapSetCommTab, 1500);
-
-    document.addEventListener('click', function (e) {
-        const tabBtn = e.target.closest('#commTabs .comm-tab');
-
-        if (!tabBtn) return;
-
-        const text = tabBtn.textContent.trim();
-
-        if (text.includes('숙소')) setWriteCategoryByTab('stay');
-        else if (text.includes('맛집')) setWriteCategoryByTab('food');
-        else if (text.includes('관광지')) setWriteCategoryByTab('tour');
-        else if (text.includes('카페')) setWriteCategoryByTab('cafe');
-        else if (text.includes('여행 경로')) setWriteCategoryByTab('route');
-    }, true);
 
     window.submitReview = async function () {
 
@@ -2155,28 +2154,213 @@
     };
 
     /*
-     * 커뮤니티 목록 로딩 후 사이드바도 같이 갱신
-     */
-    const prevLoadCommunityPostsForSide = window.loadCommunityPosts;
-
-    if (typeof prevLoadCommunityPostsForSide === 'function') {
-        window.loadCommunityPosts = async function () {
-            const result = await prevLoadCommunityPostsForSide.apply(this, arguments);
-
-            setTimeout(function () {
-                window.loadCommunitySidePanels();
-            }, 80);
-
-            return result;
-        };
-    }
-
-    /*
      * 페이지 최초 진입 시에도 한 번 렌더링
      */
     setTimeout(function () {
         window.loadCommunitySidePanels();
     }, 300);
+})();
+
+/* =============================================================================
+ * community v2 - 카테고리별 목록/페이징 분리 보정
+ * 목적:
+ * - route/stay/food/tour/cafe 탭마다 /api/posts?category=...로 조회
+ * - 여행 경로 페이징이 다른 카테고리에 공유되는 문제 방지
+ * - 돌아오기 후 다른 카테고리 목록이 사라지는 문제 방지
+ * ============================================================================= */
+
+(function () {
+    'use strict';
+
+    const tabTextToKey = {
+        '여행 경로': 'route',
+        '숙소': 'stay',
+        '맛집': 'food',
+        '관광지': 'tour',
+        '카페': 'cafe'
+    };
+
+    function getCurrentTabKey() {
+        const activeTab = document.querySelector('#commTabs .comm-tab.on');
+
+        if (activeTab) {
+            const text = activeTab.textContent.trim();
+            if (tabTextToKey[text]) return tabTextToKey[text];
+        }
+
+        if (typeof _commState !== 'undefined' && _commState.currentTab) {
+            return _commState.currentTab;
+        }
+
+        return 'route';
+    }
+
+    function extractPage(res) {
+        const page = res?.data || res || {};
+
+        return {
+            content: Array.isArray(page.content) ? page.content : [],
+            number: Number(page.number ?? 0),
+            totalPages: Number(page.totalPages ?? 1),
+            totalElements: Number(page.totalElements ?? 0)
+        };
+    }
+
+    function removeCommunityV2Pager() {
+        /*
+         * v2에서 새로 만든 페이징 제거
+         */
+        const v2Pager = document.getElementById('community-v2-pagination');
+        if (v2Pager) v2Pager.remove();
+
+        /*
+         * 기존 app_community.js가 만든 페이징 제거
+         * 클래스명이 다를 수 있어서 후보를 넓게 잡는다.
+         */
+        document.querySelectorAll('.pagination, .pager, .comm-pagination, .page-wrap, .post-pagination').forEach(el => {
+            if (el.id !== 'community-v2-pagination') {
+                el.remove();
+            }
+        });
+
+        /*
+         * 클래스가 없는 숫자 버튼 페이징 제거
+         * 예: [1] [2] [3] [4] [5]
+         */
+        document.querySelectorAll('div').forEach(div => {
+            if (div.id === 'community-v2-pagination') return;
+
+            const buttons = Array.from(div.querySelectorAll(':scope > button'));
+
+            if (buttons.length < 2) return;
+
+            const isNumberPager = buttons.every(btn => {
+                const text = btn.textContent.trim();
+                return /^\d+$/.test(text);
+            });
+
+            if (isNumberPager) {
+                div.remove();
+            }
+        });
+    }
+
+    function renderCommunityV2Pager(tab, pageNumber, totalPages) {
+        removeCommunityV2Pager();
+
+        const tabEl = document.getElementById('tab-' + tab);
+        if (!tabEl) return;
+
+        if (!totalPages || totalPages <= 1) {
+            return;
+        }
+
+        const pager = document.createElement('div');
+        pager.id = 'community-v2-pagination';
+        pager.className = 'community-v2-pagination';
+
+        let html = '';
+
+        for (let i = 0; i < totalPages; i++) {
+            html += `
+                <button type="button"
+                        class="community-v2-page-btn ${i === pageNumber ? 'on' : ''}"
+                        data-page="${i}">
+                    ${i + 1}
+                </button>
+            `;
+        }
+
+        pager.innerHTML = html;
+
+        pager.querySelectorAll('.community-v2-page-btn').forEach(btn => {
+            btn.addEventListener('click', function () {
+                const nextPage = Number(this.dataset.page || 0);
+                window.loadCommunityPosts(nextPage, true);
+            });
+        });
+
+        tabEl.insertAdjacentElement('afterend', pager);
+    }
+
+    window.loadCommunityPosts = async function (page = 0, reset = true) {
+        const tab = getCurrentTabKey();
+
+        removeCommunityV2Pager();
+
+        if (typeof _commState !== 'undefined') {
+            _commState.currentTab = tab;
+            _commState.page = page;
+        }
+
+        const tabEl = document.getElementById('tab-' + tab);
+
+        if (tabEl && reset) {
+            tabEl.innerHTML = `
+                <div style="padding:40px 20px;text-align:center;color:var(--text3);font-size:14px">
+                    불러오는 중...
+                </div>
+            `;
+        }
+
+        try {
+            const res = await api.get(
+                `/api/posts?page=${page}&size=10&sort=scrap&category=${tab}`
+            );
+
+            const pageData = extractPage(res);
+
+            if (typeof window._renderPostList === 'function') {
+                window._renderPostList(pageData.content, true);
+            }
+
+            renderCommunityV2Pager(tab, pageData.number, pageData.totalPages);
+
+            if (typeof window.loadCommunitySidePanels === 'function') {
+                window.loadCommunitySidePanels();
+            }
+        } catch (e) {
+            console.error('[community-v2] 카테고리 목록 조회 실패:', e);
+
+            if (tabEl) {
+                tabEl.innerHTML = `
+                    <div style="padding:40px 20px;text-align:center;color:var(--coral);font-size:14px">
+                        게시글을 불러오지 못했습니다.
+                    </div>
+                `;
+            }
+
+            removeCommunityV2Pager();
+        }
+    };
+
+    function wrapSetCommTabForList() {
+        if (typeof window.setCommTab !== 'function') return;
+        if (window.setCommTab.__communityV2ListWrapped) return;
+
+        const originalSetCommTab = window.setCommTab;
+
+        window.setCommTab = function (btn, cat) {
+            const result = originalSetCommTab.apply(this, arguments);
+
+            if (typeof _commState !== 'undefined') {
+                _commState.currentTab = cat || 'route';
+                _commState.page = 0;
+            }
+
+            setTimeout(function () {
+                window.loadCommunityPosts(0, true);
+            }, 50);
+
+            return result;
+        };
+
+        window.setCommTab.__communityV2ListWrapped = true;
+    }
+
+    setTimeout(wrapSetCommTabForList, 300);
+    setTimeout(wrapSetCommTabForList, 800);
+    setTimeout(wrapSetCommTabForList, 1500);
 })();
 
 /* =============================================================================
@@ -2458,170 +2642,4 @@
             return result;
         };
     }
-})();
-
-/* =============================================================================
- * community v2 - 카테고리별 목록/페이징 분리 보정
- * 목적:
- * - route/stay/food/tour/cafe 탭마다 /api/posts?category=...로 조회
- * - 여행 경로 페이징이 다른 카테고리에 공유되는 문제 방지
- * - 돌아오기 후 다른 카테고리 목록이 사라지는 문제 방지
- * ============================================================================= */
-
-(function () {
-    'use strict';
-
-    const tabTextToKey = {
-        '여행 경로': 'route',
-        '숙소': 'stay',
-        '맛집': 'food',
-        '관광지': 'tour',
-        '카페': 'cafe'
-    };
-
-    function getCurrentTabKey() {
-        const activeTab = document.querySelector('#commTabs .comm-tab.on');
-
-        if (activeTab) {
-            const text = activeTab.textContent.trim();
-            if (tabTextToKey[text]) return tabTextToKey[text];
-        }
-
-        if (typeof _commState !== 'undefined' && _commState.currentTab) {
-            return _commState.currentTab;
-        }
-
-        return 'route';
-    }
-
-    function extractPage(res) {
-        const page = res?.data || res || {};
-
-        return {
-            content: Array.isArray(page.content) ? page.content : [],
-            number: Number(page.number ?? 0),
-            totalPages: Number(page.totalPages ?? 1),
-            totalElements: Number(page.totalElements ?? 0)
-        };
-    }
-
-    function removeCommunityV2Pager() {
-        const old = document.getElementById('community-v2-pagination');
-        if (old) old.remove();
-    }
-
-    function renderCommunityV2Pager(tab, pageNumber, totalPages) {
-        removeCommunityV2Pager();
-
-        const tabEl = document.getElementById('tab-' + tab);
-        if (!tabEl) return;
-
-        if (!totalPages || totalPages <= 1) {
-            return;
-        }
-
-        const pager = document.createElement('div');
-        pager.id = 'community-v2-pagination';
-        pager.className = 'community-v2-pagination';
-
-        let html = '';
-
-        for (let i = 0; i < totalPages; i++) {
-            html += `
-                <button type="button"
-                        class="community-v2-page-btn ${i === pageNumber ? 'on' : ''}"
-                        data-page="${i}">
-                    ${i + 1}
-                </button>
-            `;
-        }
-
-        pager.innerHTML = html;
-
-        pager.querySelectorAll('.community-v2-page-btn').forEach(btn => {
-            btn.addEventListener('click', function () {
-                const nextPage = Number(this.dataset.page || 0);
-                window.loadCommunityPosts(nextPage, true);
-            });
-        });
-
-        tabEl.insertAdjacentElement('afterend', pager);
-    }
-
-    window.loadCommunityPosts = async function (page = 0, reset = true) {
-        const tab = getCurrentTabKey();
-
-        if (typeof _commState !== 'undefined') {
-            _commState.currentTab = tab;
-            _commState.page = page;
-        }
-
-        const tabEl = document.getElementById('tab-' + tab);
-
-        if (tabEl && reset) {
-            tabEl.innerHTML = `
-                <div style="padding:40px 20px;text-align:center;color:var(--text3);font-size:14px">
-                    불러오는 중...
-                </div>
-            `;
-        }
-
-        try {
-            const res = await api.get(
-                `/api/posts?page=${page}&size=10&sort=scrap&category=${tab}`
-            );
-
-            const pageData = extractPage(res);
-
-            if (typeof window._renderPostList === 'function') {
-                window._renderPostList(pageData.content, true);
-            }
-
-            renderCommunityV2Pager(tab, pageData.number, pageData.totalPages);
-
-            if (typeof window.loadCommunitySidePanels === 'function') {
-                window.loadCommunitySidePanels();
-            }
-        } catch (e) {
-            console.error('[community-v2] 카테고리 목록 조회 실패:', e);
-
-            if (tabEl) {
-                tabEl.innerHTML = `
-                    <div style="padding:40px 20px;text-align:center;color:var(--coral);font-size:14px">
-                        게시글을 불러오지 못했습니다.
-                    </div>
-                `;
-            }
-
-            removeCommunityV2Pager();
-        }
-    };
-
-    function wrapSetCommTabForList() {
-        if (typeof window.setCommTab !== 'function') return;
-        if (window.setCommTab.__communityV2ListWrapped) return;
-
-        const originalSetCommTab = window.setCommTab;
-
-        window.setCommTab = function (btn, cat) {
-            const result = originalSetCommTab.apply(this, arguments);
-
-            if (typeof _commState !== 'undefined') {
-                _commState.currentTab = cat || 'route';
-                _commState.page = 0;
-            }
-
-            setTimeout(function () {
-                window.loadCommunityPosts(0, true);
-            }, 50);
-
-            return result;
-        };
-
-        window.setCommTab.__communityV2ListWrapped = true;
-    }
-
-    setTimeout(wrapSetCommTabForList, 300);
-    setTimeout(wrapSetCommTabForList, 800);
-    setTimeout(wrapSetCommTabForList, 1500);
 })();
