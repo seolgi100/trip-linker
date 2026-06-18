@@ -802,45 +802,159 @@ async function exportBudgetPDF() {
     }
 }
 
-/** 가계부 CSV 다운로드 (Excel에서 열기 가능, 개별 지출 내역 포함) */
+/** 가계부 Excel 다운로드 (XML SpreadsheetML — 색상·열 너비 포함) */
 function exportBudgetCSV() {
     if (!_lastExpenseData) { toast('가계부 데이터를 먼저 불러주세요.'); return; }
     const d = _lastExpenseData;
-    const q = v => '"' + String(v == null ? '' : v).replace(/"/g, '""') + '"';
+
+    const esc = v => String(v == null ? '' : v)
+        .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+    // 텍스트 셀
+    const sc = (val, sid='') =>
+        `<Cell${sid ? ` ss:StyleID="${sid}"` : ''}><Data ss:Type="String">${esc(val)}</Data></Cell>`;
+    // 숫자 셀
+    const nc = (val, sid='') =>
+        `<Cell${sid ? ` ss:StyleID="${sid}"` : ''}><Data ss:Type="Number">${+val||0}</Data></Cell>`;
+    // 병합 셀 (span = 합칠 열 수)
+    const mc = (val, span, sid='') =>
+        `<Cell ss:MergeAcross="${span-1}"${sid ? ` ss:StyleID="${sid}"` : ''}><Data ss:Type="String">${esc(val)}</Data></Cell>`;
+    const ec = '<Cell/>';
 
     const rows = [];
-    rows.push([q('가계부 리포트')]);
-    if (d.tripTitle)   rows.push([q(d.tripTitle)]);
-    if (d.destination) rows.push([q('목적지'), q(d.destination)]);
-    if (d.startDate)   rows.push([q('기간'), q(d.startDate + ' ~ ' + d.endDate)]);
-    if (d.budget)      rows.push([q('설정 예산'), q(d.budget)]);
-    rows.push([]);
 
-    rows.push([q('[카테고리별 비교]')]);
-    rows.push([q('카테고리'), q('예상 금액(원)'), q('실제 지출(원)'), q('차이(원)')]);
+    // ── 메타 정보 ──
+    rows.push(`<Row ss:Height="26">${mc('가계부 리포트', 4, 'ttl')}</Row>`);
+    if (d.tripTitle)   rows.push(`<Row ss:Height="20">${mc(d.tripTitle, 4, 'meta')}</Row>`);
+    if (d.destination) rows.push(`<Row>${sc('목적지','lbl')}${sc(d.destination,'metaV')}${ec}${ec}</Row>`);
+    if (d.startDate)   rows.push(`<Row>${sc('기간','lbl')}${sc(d.startDate+' ~ '+d.endDate,'metaV')}${ec}${ec}</Row>`);
+    if (d.budget)      rows.push(`<Row>${sc('설정 예산','lbl')}${nc(d.budget,'metaV')}${ec}${ec}</Row>`);
+    rows.push(`<Row ss:Height="10"/>`);
+
+    // ── 카테고리별 비교 ──
+    rows.push(`<Row ss:Height="22">${mc('[카테고리별 비교]', 4, 'sec')}</Row>`);
+    rows.push(`<Row ss:Height="20">${sc('카테고리','hdr')}${sc('예상 금액(원)','hdrR')}${sc('실제 지출(원)','hdrR')}${sc('차이(원)','hdrR')}</Row>`);
     (d.categoryBudgets || []).forEach(c => {
         const info = _CATEGORY_MAP[c.category] || { label: c.category };
-        rows.push([q(info.label), q(c.estimatedAmount || 0), q(c.actualAmount || 0), q((c.actualAmount || 0) - (c.estimatedAmount || 0))]);
+        const diff = (c.actualAmount || 0) - (c.estimatedAmount || 0);
+        rows.push(`<Row>${sc(info.label)}${nc(c.estimatedAmount||0,'numR')}${nc(c.actualAmount||0,'numR')}${nc(diff, diff > 0 ? 'over' : 'numR')}</Row>`);
     });
-    rows.push([q('합계'), q(d.totalEstimatedAmount || 0), q(d.totalActualAmount || 0), q((d.totalActualAmount || 0) - (d.totalEstimatedAmount || 0))]);
-    rows.push([]);
+    const totalDiff = (d.totalActualAmount||0) - (d.totalEstimatedAmount||0);
+    rows.push(`<Row ss:Height="20">${sc('합계','sumLbl')}${nc(d.totalEstimatedAmount||0,'sumNum')}${nc(d.totalActualAmount||0,'sumNum')}${nc(totalDiff, totalDiff > 0 ? 'sumOver' : 'sumNum')}</Row>`);
+    rows.push(`<Row ss:Height="10"/>`);
 
-    rows.push([q('[실제 지출 상세 내역]')]);
-    rows.push([q('날짜'), q('카테고리'), q('메모'), q('금액(원)')]);
-    if ((d.actualExpenses || []).length === 0) {
-        rows.push([q('(내역 없음)')]);
+    // ── 실제 지출 상세 내역 ──
+    rows.push(`<Row ss:Height="22">${mc('[실제 지출 상세 내역]', 4, 'sec')}</Row>`);
+    rows.push(`<Row ss:Height="20">${sc('날짜','hdr')}${sc('카테고리','hdr')}${sc('메모','hdr')}${sc('금액(원)','hdrR')}</Row>`);
+    if (!(d.actualExpenses||[]).length) {
+        rows.push(`<Row>${mc('(내역 없음)', 4)}</Row>`);
     } else {
-        (d.actualExpenses || []).forEach(e => {
+        (d.actualExpenses||[]).forEach((e, i) => {
             const info = _CATEGORY_MAP[e.category] || { label: e.category };
-            rows.push([q(e.date || ''), q(info.label), q(e.description || ''), q(e.amount || 0)]);
+            const rs = i % 2 === 1 ? 'stripe' : '';
+            rows.push(`<Row>${sc(e.date||'',rs)}${sc(info.label,rs)}${sc(e.description||'',rs)}${nc(e.amount||0, rs ? 'stripeR' : 'numR')}</Row>`);
         });
     }
 
-    const csv  = rows.map(r => r.join(',')).join('\n');
-    const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' });
+    const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<?mso-application progid="Excel.Sheet"?>
+<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet"
+  xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet"
+  xmlns:x="urn:schemas-microsoft-com:office:excel">
+<Styles>
+  <Style ss:ID="ttl">
+    <Font ss:Bold="1" ss:Size="14" ss:Color="#FFFFFF"/>
+    <Interior ss:Color="#5B8272" ss:Pattern="Solid"/>
+    <Alignment ss:Horizontal="Left" ss:Vertical="Center"/>
+  </Style>
+  <Style ss:ID="meta">
+    <Font ss:Bold="1" ss:Size="12" ss:Color="#2C5F4E"/>
+    <Alignment ss:Horizontal="Left"/>
+  </Style>
+  <Style ss:ID="lbl">
+    <Font ss:Bold="1" ss:Color="#555555"/>
+    <Interior ss:Color="#F2F2F2" ss:Pattern="Solid"/>
+  </Style>
+  <Style ss:ID="metaV">
+    <Font ss:Color="#333333"/>
+  </Style>
+  <Style ss:ID="sec">
+    <Font ss:Bold="1" ss:Size="11" ss:Color="#FFFFFF"/>
+    <Interior ss:Color="#7FAF97" ss:Pattern="Solid"/>
+    <Alignment ss:Horizontal="Left" ss:Vertical="Center"/>
+  </Style>
+  <Style ss:ID="hdr">
+    <Font ss:Bold="1" ss:Color="#2C5F4E"/>
+    <Interior ss:Color="#C8DDD6" ss:Pattern="Solid"/>
+    <Borders>
+      <Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="2" ss:Color="#7FAF97"/>
+    </Borders>
+  </Style>
+  <Style ss:ID="hdrR">
+    <Font ss:Bold="1" ss:Color="#2C5F4E"/>
+    <Interior ss:Color="#C8DDD6" ss:Pattern="Solid"/>
+    <Alignment ss:Horizontal="Right"/>
+    <Borders>
+      <Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="2" ss:Color="#7FAF97"/>
+    </Borders>
+  </Style>
+  <Style ss:ID="numR">
+    <Alignment ss:Horizontal="Right"/>
+    <NumberFormat ss:Format="#,##0"/>
+  </Style>
+  <Style ss:ID="over">
+    <Alignment ss:Horizontal="Right"/>
+    <Font ss:Color="#CC3333"/>
+    <NumberFormat ss:Format="#,##0"/>
+  </Style>
+  <Style ss:ID="sumLbl">
+    <Font ss:Bold="1" ss:Color="#2C5F4E"/>
+    <Interior ss:Color="#E4F0EB" ss:Pattern="Solid"/>
+    <Borders>
+      <Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="2" ss:Color="#7FAF97"/>
+    </Borders>
+  </Style>
+  <Style ss:ID="sumNum">
+    <Font ss:Bold="1" ss:Color="#2C5F4E"/>
+    <Interior ss:Color="#E4F0EB" ss:Pattern="Solid"/>
+    <Alignment ss:Horizontal="Right"/>
+    <NumberFormat ss:Format="#,##0"/>
+    <Borders>
+      <Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="2" ss:Color="#7FAF97"/>
+    </Borders>
+  </Style>
+  <Style ss:ID="sumOver">
+    <Font ss:Bold="1" ss:Color="#CC3333"/>
+    <Interior ss:Color="#E4F0EB" ss:Pattern="Solid"/>
+    <Alignment ss:Horizontal="Right"/>
+    <NumberFormat ss:Format="#,##0"/>
+    <Borders>
+      <Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="2" ss:Color="#7FAF97"/>
+    </Borders>
+  </Style>
+  <Style ss:ID="stripe">
+    <Interior ss:Color="#F5F9F7" ss:Pattern="Solid"/>
+  </Style>
+  <Style ss:ID="stripeR">
+    <Interior ss:Color="#F5F9F7" ss:Pattern="Solid"/>
+    <Alignment ss:Horizontal="Right"/>
+    <NumberFormat ss:Format="#,##0"/>
+  </Style>
+</Styles>
+<Worksheet ss:Name="가계부">
+<Table ss:DefaultRowHeight="18">
+  <Column ss:Width="80"/>
+  <Column ss:Width="110"/>
+  <Column ss:Width="160"/>
+  <Column ss:Width="110"/>
+  ${rows.join('\n  ')}
+</Table>
+</Worksheet>
+</Workbook>`;
+
+    const blob = new Blob([xml], { type: 'application/vnd.ms-excel;charset=utf-8' });
     const a    = document.createElement('a');
     a.href     = URL.createObjectURL(blob);
-    a.download = '가계부_' + (d.tripTitle || 'report') + '.csv';
+    a.download = '가계부_' + (d.tripTitle || 'report') + '.xls';
     a.click();
-    toast('Excel(CSV) 다운로드 시작...');
+    toast('Excel 다운로드 시작...');
 }
