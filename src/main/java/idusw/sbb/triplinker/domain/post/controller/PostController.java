@@ -8,6 +8,7 @@ import idusw.sbb.triplinker.domain.post.service.PostService;
 import idusw.sbb.triplinker.domain.system.dto.ReportRequestDto;
 import idusw.sbb.triplinker.domain.system.service.SystemService;
 import idusw.sbb.triplinker.global.common.ApiResponse;
+import idusw.sbb.triplinker.global.service.LocalFileService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -15,6 +16,11 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
+
+import java.io.IOException;
+import java.util.ArrayList;
+import java.util.List;
 
 import java.util.List;
 
@@ -25,6 +31,20 @@ public class PostController {
 
     private final PostService postService;
     private final SystemService systemService;
+    private final LocalFileService localFileService;
+
+    // 커뮤니티 - 이미지 업로드
+    @PostMapping("/images")
+    public ResponseEntity<List<String>> uploadImages(
+            @AuthenticationPrincipal CustomUserDetails userDetails,
+            @RequestParam("files") List<MultipartFile> files
+    ) throws IOException {
+        List<String> imageUrls = new ArrayList<>();
+        for (MultipartFile file : files) {
+            imageUrls.add(localFileService.save(file));
+        }
+        return ResponseEntity.ok(imageUrls);
+    }
 
     // 커뮤니티 - 게시글 목록 조회
     @GetMapping

@@ -2,44 +2,47 @@ package idusw.sbb.triplinker.domain.post.dto;
 
 import idusw.sbb.triplinker.domain.post.entity.Post;
 import idusw.sbb.triplinker.domain.post.entity.PostComment;
+import idusw.sbb.triplinker.domain.post.entity.PostImage;
 
 import java.time.LocalDateTime;
 import java.util.List;
 
 public record PostDetailResponseDto(
-        Long postId,                 // 게시글 ID
-        Long userId,                 // 작성자 ID
-        String writerName,           // 작성자명
+        Long postId,
+        Long userId,
+        String writerName,
 
-        String category,             // 게시글 카테고리: ROUTE, STAY, FOOD, TOUR, CAFE
-        String catLabel,             // 화면 표시용 카테고리명
-        String catClass,             // 화면 표시용 카테고리 CSS 클래스
+        String category,        //ROUTE, STAY, FOOD, TOUR, CAFE
+        String catLabel,        //화면 표시용 카테고리 라벨
+        String catClass,        //CSS 클래스
 
-        Long planId,                 // 연결된 여행 플랜 ID
-        String planTitle,            // 연결된 여행 플랜 제목
-        String planDestination,      // 여행지
-        String planStartDate,        // 여행 시작일
-        String planEndDate,          // 여행 종료일
-        String planRouteJson,        // 여행 일정(Route) JSON 데이터
-        Integer planCompanionCount,  // 연결된 플랜 인원
-        String planTravelStyles,     // 연결된 플랜 여행 스타일 JSON
-        String planTransportType,    // 연결된 플랜 이동 수단
-        Long planBudget,             // 연결된 플랜 예산
+        Long planId,
+        String planTitle,
+        String planDestination,
+        String planStartDate,
+        String planEndDate,
+        String planRouteJson,
+        Integer planCompanionCount,
+        String planTravelStyles,
+        String planTransportType,
+        Long planBudget,
 
-        String title,                // 제목
-        String content,              // 본문
-        String styleTags,            // 여행 취향 태그
-        int likeCount,               // 좋아요 수
-        int viewCount,               // 조회 수
-        String status,               // 게시글 상태
-        boolean isPublic,            // 공개 여부
-        boolean likedByMe,           // 현재 사용자의 좋아요 여부
-        boolean scrappedByMe,        // 현재 사용자의 스크랩 여부
-        List<CommentInfo> comments,  // 댓글 목록
-        LocalDateTime createdAt,     // 작성 일시
-        LocalDateTime updatedAt      // 수정 일시
+        String title,
+        String content,
+        String styleTags,
+        int likeCount,
+        int viewCount,
+        String status,
+        boolean isPublic,
+        boolean likedByMe,
+        boolean scrappedByMe,
+        List<String> imageUrls,
+        List<CommentInfo> comments,
+        LocalDateTime createdAt,
+        LocalDateTime updatedAt
 ) {
     public static PostDetailResponseDto from(Post post,
+                                             List<PostImage> images,
                                              List<PostComment> comments,
                                              boolean likedByMe,
                                              boolean scrappedByMe) {
@@ -91,6 +94,7 @@ public record PostDetailResponseDto(
                 post.isPublic(),
                 likedByMe,
                 scrappedByMe,
+                images.stream().map(PostImage::getImageUrl).toList(),
                 comments.stream().map(CommentInfo::from).toList(),
                 post.getCreatedAt(),
                 post.getUpdatedAt()

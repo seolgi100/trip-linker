@@ -18,13 +18,18 @@ public record PostListResponseDto(
         List<String> styleTags,
         int likes,
         int scraps,
-        int views
+        int views,
+        String thumbnailUrl          // 첫 번째 이미지 URL (없으면 null)
 ) {
     public static PostListResponseDto from(Post post) {
-        return from(post, 0);
+        return from(post, 0, null);
     }
 
     public static PostListResponseDto from(Post post, int scraps) {
+        return from(post, scraps, null);
+    }
+
+    public static PostListResponseDto from(Post post, int scraps, String thumbnailUrl) {
         String category = normalizeCategory(post.getCategory());
 
         return new PostListResponseDto(
@@ -39,7 +44,8 @@ public record PostListResponseDto(
                 parseStyleTags(post.getStyleTags()),
                 post.getLikeCount(),
                 scraps,
-                post.getViewCount()
+                post.getViewCount(),
+                thumbnailUrl
         );
     }
 

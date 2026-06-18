@@ -7,14 +7,17 @@ import idusw.sbb.triplinker.domain.post.dto.PostListResponseDto;
 import idusw.sbb.triplinker.domain.post.dto.PostWriteDto;
 import idusw.sbb.triplinker.domain.post.entity.Post;
 import idusw.sbb.triplinker.domain.post.entity.PostComment;
+import idusw.sbb.triplinker.domain.post.entity.PostImage;
 import idusw.sbb.triplinker.domain.post.entity.PostLike;
 import idusw.sbb.triplinker.domain.post.entity.PostScrap;
 import idusw.sbb.triplinker.domain.post.repository.PostCommentRepository;
+import idusw.sbb.triplinker.domain.post.repository.PostImageRepository;
 import idusw.sbb.triplinker.domain.post.repository.PostLikeRepository;
 import idusw.sbb.triplinker.domain.post.repository.PostRepository;
 import idusw.sbb.triplinker.domain.post.repository.PostScrapRepository;
 import idusw.sbb.triplinker.domain.user.entity.User;
 import idusw.sbb.triplinker.domain.user.repository.UserRepository;
+import idusw.sbb.triplinker.global.service.LocalFileService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -32,11 +35,12 @@ public class PostService {
 
     private final PostRepository postRepository;
     private final PostLikeRepository postLikeRepository;
-
     private final PostCommentRepository postCommentRepository;
     private final PostScrapRepository postScrapRepository;
+    private final PostImageRepository postImageRepository;
     private final UserRepository userRepository;
     private final TravelPlanRepository travelPlanRepository;
+    private final LocalFileService localFileService;
 
     //후기 목록 조회
     public List<PostListResponseDto> getMyPosts(Long userId) {
@@ -78,10 +82,12 @@ public class PostService {
             }
         }
 
-        return posts.map(post -> PostListResponseDto.from(
-                post,
-                (int) postScrapRepository.countByPost_Id(post.getId())
-        ));
+        return posts.map(post -> {
+            int scraps = (int) postScrapRepository.countByPost_Id(post.getId());
+            List<PostImage> images = postImageRepository.findByPostIdOrderByImageOrderAsc(post.getId());
+            String thumbnailUrl = images.isEmpty() ? null : images.get(0).getImageUrl();
+            return PostListResponseDto.from(post, scraps, thumbnailUrl);
+        });
     }
 
     private String toCategoryCode(String category) {
@@ -134,7 +140,21 @@ public class PostService {
                 .isPublic(dto.isPublic())
                 .build();
 
-        return postRepository.save(post).getId();
+        postRepository.save(post);
+
+        if (dto.getImageUrls() != null) {
+            for (int i = 0; i < dto.getImageUrls().size(); i++) {
+                PostImage image = PostImage.builder()
+                        .post(post)
+                        .imageUrl(dto.getImageUrls().get(i))
+                        .s3ObjectKey(dto.getImageUrls().get(i))
+                        .imageOrder(i)
+                        .build();
+                postImageRepository.save(image);
+            }
+        }
+
+        return post.getId();
     }
 
     // 커뮤니티 - 게시글 상세 조회
@@ -149,6 +169,8 @@ public class PostService {
                 .findByPostIdAndStatusOrderByCreatedAtAsc(postId, "ACTIVE", Pageable.unpaged())
                 .getContent();
 
+        List<PostImage> images = postImageRepository.findByPostIdOrderByImageOrderAsc(postId);
+
         boolean likedByMe = false;
         boolean scrappedByMe = false;
 
@@ -157,7 +179,7 @@ public class PostService {
             scrappedByMe = postScrapRepository.existsByUserIdAndPostId(userId, postId);
         }
 
-        return PostDetailResponseDto.from(post, comments, likedByMe, scrappedByMe);
+        return PostDetailResponseDto.from(post, images, comments, likedByMe, scrappedByMe);
     }
 
     // 커뮤니티 - 게시글 삭제
@@ -169,6 +191,10 @@ public class PostService {
         if (!Objects.equals(post.getUser().getId(), userId)) {
             throw new IllegalArgumentException("게시글 삭제 권한이 없습니다.");
         }
+
+        List<PostImage> images = postImageRepository.findByPostId(postId);
+        images.forEach(img -> localFileService.delete(img.getImageUrl()));
+        postImageRepository.deleteAll(images);
 
         post.delete();
     }
