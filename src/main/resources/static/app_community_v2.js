@@ -8,10 +8,6 @@
 (function () {
     'use strict';
 
-    /*
-     * 기존 openPostDetail(postId)이 있으면 감싸서 postId를 전역에 저장한다.
-     * 이렇게 해야 상세 화면에서 좋아요/스크랩/신고 버튼이 현재 게시글 번호를 알 수 있다.
-     */
     const originalOpenPostDetail = window.openPostDetail;
 
     if (typeof originalOpenPostDetail === 'function') {
@@ -21,9 +17,7 @@
         };
     }
 
-    /*
-     * 현재 상세 화면의 게시글 ID 가져오기
-     */
+    // 현재 상세 화면의 게시글 ID 가져오기
     function getCurrentPostId() {
         if (window._currentPostId) return window._currentPostId;
         if (window._openedPostId) return window._openedPostId;
@@ -42,9 +36,7 @@
         return 'ROUTE';
     }
 
-    /*
-     * 로그인 확인
-     */
+    // 로그인 확인
     function requireLoginForCommunityAction() {
         if (typeof Token === 'undefined' || !Token.getAccess || !Token.getAccess()) {
             if (typeof toast === 'function') toast('로그인이 필요합니다.');
@@ -54,10 +46,7 @@
         return true;
     }
 
-    /*
-     * 좋아요
-     * HTML: onclick="doReviewLike()"
-     */
+    // 좋아요 - HTML: onclick="doReviewLike()"
     window.doReviewLike = async function () {
         if (!requireLoginForCommunityAction()) return;
 
@@ -78,10 +67,7 @@
         }
     };
 
-    /*
-     * 스크랩
-     * HTML: onclick="doReviewScrap()"
-     */
+    // 스크랩 - HTML: onclick="doReviewScrap()"
     window.doReviewScrap = async function () {
         if (!requireLoginForCommunityAction()) return;
 
@@ -104,10 +90,7 @@
         }
     };
 
-    /*
-     * 신고
-     * HTML: onclick="doReviewReport()"
-     */
+    // 신고 - HTML: onclick="doReviewReport()"
     window.doReviewReport = async function () {
         if (!requireLoginForCommunityAction()) return;
 
@@ -133,9 +116,7 @@
         }
     };
 
-    /*
-     * 상세 정보 새로고침
-     */
+    // 상세 정보 새로고침
     async function refreshCurrentReview(postId) {
         if (typeof window.openPostDetail === 'function') {
             await window.openPostDetail(postId);
@@ -193,12 +174,6 @@
 
         const res = await api.post(`/api/posts/${postId}/scraps?category=${category}`, {});
 
-        /*
-         * 정상 처리 기준:
-         * 1) res.success === true
-         * 2) 응답 body가 비어 있음 {}
-         * 3) success 필드가 없지만 HTTP 200으로 apiCall이 정상 반환한 경우
-         */
         const isEmptyResponse =
             res &&
             typeof res === 'object' &&
@@ -236,9 +211,7 @@
 (function () {
     'use strict';
 
-    /*
-     * XSS 방지용 기본 escape
-     */
+    // XSS 방지용 기본 escape
     function escapeHtml(value) {
         return String(value ?? '')
             .replaceAll('&', '&amp;')
@@ -248,10 +221,7 @@
             .replaceAll("'", '&#039;');
     }
 
-    /*
-     * styleTags가 JSON 문자열("[\"가성비\", \"힐링\"]")이든
-     * 쉼표 문자열("가성비,힐링")이든 배열로 변환
-     */
+    // 배열로 변환
     function parseStyleTags(styleTags) {
         if (!styleTags) return [];
 
@@ -270,9 +240,7 @@
             .filter(Boolean);
     }
 
-    /*
-     * 날짜 표시
-     */
+    // 날짜 표시
     function formatDate(value) {
         if (!value) return '';
         try {
@@ -282,25 +250,19 @@
         }
     }
 
-    /*
-     * 요소 textContent 안전 세팅
-     */
+    // 요소 textContent 안전 세팅
     function setText(id, value) {
         const el = document.getElementById(id);
         if (el) el.textContent = value ?? '';
     }
 
-    /*
-     * 요소 innerHTML 안전 세팅
-     */
+    // 요소 innerHTML 안전 세팅
     function setHtml(id, html) {
         const el = document.getElementById(id);
         if (el) el.innerHTML = html ?? '';
     }
 
-    /*
-     * 댓글 렌더링
-     */
+    // 댓글 렌더링
     function renderReviewComments(comments) {
         const box = document.getElementById('pr-comments');
         if (!box) return;
@@ -334,9 +296,7 @@
         `;
     }
 
-    /*
-     * 플랜 연동 정보 렌더링
-     */
+    // 플랜 연동 정보 렌더링
     function renderLinkedPlan(post) {
         const badge = document.getElementById('pr-plan-badge');
         const placeList = document.getElementById('pr-place-list');
@@ -370,9 +330,7 @@
         }
     }
 
-    /*
-     * 상세 화면 전체 렌더링
-     */
+    // 상세 화면 전체 렌더링
     function renderPostDetail(post) {
         if (!post) return;
 
@@ -438,10 +396,7 @@
         }
     }
 
-    /*
-     * 상세 조회 + 렌더링
-     * 기존 openPostDetail을 완전히 보완한다.
-     */
+    // 상세 조회 + 렌더링 : 기존 openPostDetail을 완전히 보완한다.
     window.openPostDetail = async function (postId) {
         if (!postId) {
             if (typeof toast === 'function') toast('게시글 정보를 찾을 수 없습니다.');
@@ -470,10 +425,7 @@
         renderPostDetail(res.data);
     };
 
-    /*
-     * 댓글 작성
-     * HTML: onclick="submitComment()"
-     */
+    // 댓글 작성 HTML: onclick="submitComment()"
     window.submitComment = async function () {
         const postId = window._currentPostId || window._openedPostId;
         const input = document.getElementById('commentInput');
@@ -845,19 +797,12 @@
             titleEl.closest('div') ||
             document.body;
 
-        /*
-         * 이전 코드가 만든 중복 영역 제거
-         */
+        // 이전 코드가 만든 중복 영역 제거
         const duplicatedWrap = document.getElementById('writePlanWrap');
         if (duplicatedWrap) {
             duplicatedWrap.remove();
         }
 
-        /*
-         * 기존 HTML 안에 있던 플랜 select 찾기
-         * - 후기 작성 모달 내부 select 중에서
-         * - 지역 선택용 loc-big은 제외
-         */
         let select = document.getElementById('writePlanId');
 
         if (!select) {
@@ -867,10 +812,6 @@
             select = candidates[0];
         }
 
-        /*
-         * 기존 select가 없을 때만 새로 만든다.
-         * 보통은 여기까지 안 옴.
-         */
         if (!select) {
             const wrap = document.createElement('div');
             wrap.style.marginTop = '14px';
@@ -1012,10 +953,7 @@
         };
     };
 
-    /*
-     * 후기 작성 버튼을 눌러 모달이 열린 뒤 사진 버튼을 다시 연결한다.
-     * checkAndOpenWrite는 이미 이전 코드에서 감싸져 있을 수 있으므로 한 번 더 안전하게 감싼다.
-     */
+    // 후기 작성 버튼을 눌러 모달이 열린 뒤 사진 버튼을 다시 연결한다.
     const prevCheckAndOpenWriteForImage = window.checkAndOpenWrite;
 
     if (typeof prevCheckAndOpenWriteForImage === 'function') {
@@ -1045,9 +983,7 @@
         };
     }
 
-    /*
-     * 이미 모달이 열려 있는 상태에서 새로고침 없이 테스트할 수 있도록 수동 호출 가능
-     */
+    // 이미 모달이 열려 있는 상태에서 새로고침 없이 테스트할 수 있도록 수동 호출 가능
 })();
 
 /* =============================================================================
@@ -1645,9 +1581,7 @@
         });
     };
 
-    /*
-     * 기존 loadCommunityPosts 내부에서 식별자 _renderPostList를 직접 참조하는 경우까지 대비
-     */
+    // 기존 loadCommunityPosts 내부에서 식별자 _renderPostList를 직접 참조하는 경우까지 대비
     try {
         _renderPostList = window._renderPostList;
     } catch (e) {
@@ -1939,17 +1873,13 @@
     window.openCommunityPlaceSummary = function (placeName, placeType) {
         if (!placeName) return;
 
-        /*
-         * app_main.js에 있는 장소 팝업 함수가 있으면 재사용한다.
-         */
+        // app_main.js에 있는 장소 팝업 함수가 있으면 재사용한다.
         if (typeof showMapPlacePopup === 'function') {
             showMapPlacePopup(placeName, placeType || 'tour');
             return;
         }
 
-        /*
-         * 장소 팝업 함수가 없는 환경에서는 최소 안내.
-         */
+        // 장소 팝업 함수가 없는 환경에서는 최소 안내.
         if (typeof toast === 'function') {
             toast(`${placeName} 상세보기`);
         }
@@ -2076,10 +2006,6 @@
     }
 
     async function fetchCommunityPostsForSide() {
-        /*
-         * sort=scrap&category=route는 현재 커뮤니티 목록에서 이미 정상 호출되는 API 형식.
-         * size를 크게 줘서 태그/추천 계산에 사용할 데이터를 조금 더 확보한다.
-         */
         const res = await api.get('/api/posts?page=0&size=50&sort=scrap&category=route');
         return extractPosts(res);
     }
@@ -2102,9 +2028,7 @@
             .map(([name, count]) => ({ name, count }))
             .slice(0, 9);
 
-        /*
-         * 작성된 글에 태그가 너무 적을 때 화면이 비지 않도록 최소 보정
-         */
+        // 작성된 글에 태그가 너무 적을 때 화면이 비지 않도록 최소 보정
         if (!tags.length) {
             tags = [
                 { name: '힐링', count: 1 },
@@ -2131,9 +2055,7 @@
         const scraps = Number(post.scraps ?? post.scrapCount ?? 0);
         const views = Number(post.views ?? post.viewCount ?? 0);
 
-        /*
-         * 스크랩과 좋아요를 더 크게 보고, 조회수는 약하게 반영
-         */
+        // 스크랩과 좋아요를 더 크게 보고, 조회수는 약하게 반영
         return likes * 3 + scraps * 4 + views * 0.1;
     }
 
@@ -2165,10 +2087,7 @@
         const post = recommendations[0];
         const tags = parseStyleTags(post.styleTags);
 
-        /*
-         * 와이어프레임 느낌용 취향 일치 수
-         * 태그 수 + 반응 점수를 간단히 반영
-         */
+        // 와이어프레임 느낌용 취향 일치 수 : 태그 수 + 반응 점수를 간단히 반영
         const likes = Number(post.likes ?? post.likeCount ?? 0);
         const scraps = Number(post.scraps ?? post.scrapCount ?? 0);
         const matchCount = Math.max(
@@ -2200,9 +2119,6 @@
             return;
         }
 
-        /*
-         * 혹시 filterByTag가 없는 경우의 최소 대체 동작
-         */
         const q = String(tag || '').toLowerCase();
 
         document.querySelectorAll('.comm-post-item').forEach(item => {
@@ -2303,26 +2219,18 @@
     }
 
     function removeCommunityV2Pager() {
-        /*
-         * v2에서 새로 만든 페이징 제거
-         */
+        // v2에서 새로 만든 페이징 제거
         const v2Pager = document.getElementById('community-v2-pagination');
         if (v2Pager) v2Pager.remove();
 
-        /*
-         * 기존 app_community.js가 만든 페이징 제거
-         * 클래스명이 다를 수 있어서 후보를 넓게 잡는다.
-         */
+        // 기존 app_community.js가 만든 페이징 제거
         document.querySelectorAll('.pagination, .pager, .comm-pagination, .page-wrap, .post-pagination').forEach(el => {
             if (el.id !== 'community-v2-pagination') {
                 el.remove();
             }
         });
 
-        /*
-         * 클래스가 없는 숫자 버튼 페이징 제거
-         * 예: [1] [2] [3] [4] [5]
-         */
+        // 클래스가 없는 숫자 버튼 페이징 제거
         document.querySelectorAll('div').forEach(div => {
             if (div.id === 'community-v2-pagination') return;
 
@@ -2616,9 +2524,7 @@
         const tabEl = getCurrentTabElement();
         if (!tabEl) return;
 
-        /*
-         * 검색어가 없으면 현재 탭 전체 목록 복구
-         */
+        // 검색어가 없으면 현재 탭 전체 목록 복구
         if (!q) {
             const count = showAllCurrentTabItems();
 
@@ -2665,10 +2571,6 @@
         }
     }
 
-    /*
-     * page_community.html 안의 doSearch를 건드리지 않고,
-     * app_community_v2.js에서 더 나중에 확실히 덮어쓴다.
-     */
     function installCommunityV2Search() {
         window.doSearch = communityV2Search;
 
@@ -2828,12 +2730,7 @@
     }
 
     async function loadMyPostsForCommunityV2() {
-        /*
-         * PostController 기준:
-         * @RequestMapping("/api/posts")
-         * @GetMapping("/me")
-         * → /api/posts/me
-         */
+        // PostController 기준: @RequestMapping("/api/posts"), @GetMapping("/me") → /api/posts/me
         const res = await requestJson('/api/posts/me', {
             method: 'GET',
             headers: authHeaders(false)
@@ -2934,11 +2831,8 @@
         if (!confirm('게시글을 삭제하시겠습니까?')) return;
 
         try {
-            /*
-             * PostController 기준:
-             * @DeleteMapping("/{postId}")
-             * → DELETE /api/posts/{postId}
-             */
+             // PostController 기준: @DeleteMapping("/{postId}") → DELETE /api/posts/{postId}
+
             await fetch('/api/posts/' + postId, {
                 method: 'DELETE',
                 headers: authHeaders(false)
@@ -2961,10 +2855,6 @@
         }
     };
 
-    /*
-     * 마이페이지로 이동했을 때 app_main.js가 먼저 렌더링하더라도,
-     * 나중에 우리 함수로 다시 덮어 렌더링한다.
-     */
     const prevGoForMyReviews = window.go;
 
     if (typeof prevGoForMyReviews === 'function' && !prevGoForMyReviews.__communityMyReviewWrapped) {
@@ -3536,11 +3426,6 @@
             if (typeof toast === 'function') toast('게시글 정보를 찾을 수 없습니다.');
             return;
         }
-
-        /*
-         * 프론트에서도 1차 방어.
-         * 최종 권한 검사는 백엔드 PostService.updatePost/deletePostImage에서 다시 수행됨.
-         */
         if (
             typeof _currentUser !== 'undefined' &&
             _currentUser &&
@@ -4296,9 +4181,7 @@
         return String(post?.category || window._currentPostCategory || 'ROUTE').toUpperCase();
     }
 
-    /*
-     * 미리보기 모달 - 스크랩 버튼
-     */
+    // 미리보기 모달 - 스크랩 버튼
     window.scrapCurrentPreviewPlan = async function () {
         const post = window._currentPostDetail;
 
@@ -4335,10 +4218,7 @@
         }
 
         try {
-            /*
-             * 먼저 POST_SCRAPS DB 기반 목록에서 이미 담긴 글인지 확인
-             * 이미 있으면 POST를 보내지 않는다.
-             */
+            // 먼저 POST_SCRAPS DB 기반 목록에서 이미 담긴 글인지 확인 - 이미 있으면 POST를 보내지 않는다.
             const scrappedRes = await api.get('/api/posts/scrapped');
 
             const scrappedPosts = Array.isArray(scrappedRes)
@@ -4362,9 +4242,7 @@
 
                 alert('이미 스크랩한 커뮤니티 글입니다.');
 
-                /*
-                 * 보고 있던 상세 페이지로 다시 복귀
-                 */
+                // 보고 있던 상세 페이지로 다시 복귀
                 if (typeof window.openPostDetail === 'function') {
                     await window.openPostDetail(postId);
                 }
@@ -4372,9 +4250,7 @@
                 return;
             }
 
-            /*
-             * 아직 없을 때만 스크랩 저장
-             */
+            // 아직 없을 때만 스크랩 저장
             const res = await api.post(`/api/posts/${postId}/scraps?category=${category}`, {});
 
             if (res && res.success === false) {
@@ -4384,9 +4260,7 @@
                 return;
             }
 
-            /*
-             * 혹시 백엔드가 false를 돌려주면 이미 있거나 취소 처리된 상태로 본다.
-             */
+            // 혹시 백엔드가 false를 돌려주면 이미 있거나 취소 처리된 상태로 본다.
             if (res?.data === false || res === false) {
                 if (typeof closeCommunityPlanPreview === 'function') {
                     closeCommunityPlanPreview();
@@ -4409,16 +4283,12 @@
                 toast('마이페이지 > 스크랩한 커뮤니티에 추가되었습니다.');
             }
 
-            /*
-             * 마이페이지 스크랩한 커뮤니티 목록이 열려 있으면 즉시 갱신
-             */
+            // 마이페이지 스크랩한 커뮤니티 목록이 열려 있으면 즉시 갱신
             if (typeof window.loadMyCommunityScraps === 'function') {
                 setTimeout(window.loadMyCommunityScraps, 200);
             }
 
-            /*
-             * 상세 화면 다시 조회해서 스크랩 수 갱신
-             */
+            // 상세 화면 다시 조회해서 스크랩 수 갱신
             if (typeof window.openPostDetail === 'function') {
                 await window.openPostDetail(postId);
             }
@@ -4432,10 +4302,7 @@
         }
     };
 
-    /*
-     * 미리보기 모달 - 해당 경로로 여행 계획하기
-     * 현재는 실제 planId를 저장한 뒤 map으로 이동한다.
-     */
+    // 미리보기 모달 - 해당 경로로 여행 계획하기
     window.addCurrentPreviewPlanToMyTrips = async function () {
         const post = window._currentPostDetail;
 
@@ -4484,9 +4351,7 @@
         }, 500);
     };
 
-    /*
-     * 미리보기 모달 버튼을 위 함수들로 재연결
-     */
+    // 미리보기 모달 버튼을 위 함수들로 재연결
     function bindPreviewModalButtons() {
         const goBtn = document.getElementById('cpp-go-planner-btn');
         const scrapBtn = document.querySelector('.community-plan-preview-actions .cpp-sub-btn');
@@ -4520,10 +4385,7 @@
         window.openCommunityPlanPreview.__communityActionWrapped = true;
     }
 
-    /*
-     * 마이페이지 - 스크랩한 커뮤니티 목록 렌더링
-     * page_mypage.html에 있는 #my-scrap-community-list만 채운다.
-     */
+    // 마이페이지 - 스크랩한 커뮤니티 목록 렌더링
     window.loadMyCommunityScraps = async function () {
         const box = document.getElementById('my-scrap-community-list');
 
@@ -4539,10 +4401,7 @@
     `;
 
         try {
-            /*
-             * POST_SCRAPS DB 기반 조회
-             * PostController: GET /api/posts/scrapped
-             */
+            // POST_SCRAPS DB 기반 조회 - PostController: GET /api/posts/scrapped
             const res = await api.get('/api/posts/scrapped');
 
             const scraps = Array.isArray(res)
