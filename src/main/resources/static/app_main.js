@@ -284,6 +284,7 @@ async function _initSession(accessToken, refreshToken) {
   const meRes = await api.get('/api/users/me');
   if (meRes.success && meRes.data) {
     _currentUser  = meRes.data;
+    window._currentUser = _currentUser;
     _isSuspended  = (_currentUser.role === 'SUSPENDED');
   }
 
@@ -295,7 +296,7 @@ async function _initSession(accessToken, refreshToken) {
 /** 강제 로그아웃 (토큰 만료 등) */
 function forceLogout() {
   Token.clear();
-  _currentUser = null; _isSuspended = false; _loggedIn = false;
+  _currentUser = null; window._currentUser = null; _isSuspended = false; _loggedIn = false;
   _userNotifs = []; _myTrips = [];
   updateNav();
   toast('⚠️ 세션이 만료되었습니다. 다시 로그인해주세요.');
@@ -478,7 +479,7 @@ function _handleOAuthCallback() {
 async function doLogout() {
   await api.post('/api/auth/logout', {});
   Token.clear();
-  _currentUser = null; _isSuspended = false; _loggedIn = false;
+  _currentUser = null; window._currentUser = null; _isSuspended = false; _loggedIn = false;
   _userNotifs = []; _myTrips = [];
   updateNav();
   toast('로그아웃 되었습니다.');

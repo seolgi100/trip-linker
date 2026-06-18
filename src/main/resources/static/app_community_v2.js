@@ -1110,31 +1110,37 @@ window._handleWriteImageSelect = function(input) {
         return '장소';
     }
 
-    function renderPlaceSnapshot(routeData) {
+    async function renderPlaceSnapshot(postId) {
         const placeList = document.getElementById('pr-place-list');
         if (!placeList) return;
-        const places = getAllPlaces(routeData);
-        if (!places.length) { placeList.style.display = 'none'; return; }
 
-        const previewPlaces = places.slice(0, 2);
-        placeList.style.display = 'block';
-        placeList.innerHTML = `
-            <div class="review-place-snapshot">
-                <h3>📍 방문 장소별 별점 & 한줄평</h3>
-                ${previewPlaces.map(p => `
-                    <div class="review-place-snapshot-row">
-                        <div class="review-place-snapshot-icon">${escapeHtml(p.icon || '📍')}</div>
-                        <div class="review-place-snapshot-info">
-                            <strong>${escapeHtml(p.name)}</strong>
-                            <span>${escapeHtml(getPlaceShortType(p.type))}</span>
+        placeList.style.display = 'none';
+        placeList.innerHTML = '';
+
+        try {
+            const res = await api.get(`/api/posts/${postId}/place-reviews`);
+            const reviews = Array.isArray(res?.data) ? res.data : (Array.isArray(res) ? res : []);
+
+            if (!reviews.length) return;
+
+            placeList.style.display = 'block';
+            placeList.innerHTML = `
+                <div class="review-place-snapshot">
+                    <h3>📍 방문 장소별 별점 & 한줄평</h3>
+                    ${reviews.map(r => `
+                        <div class="review-place-snapshot-row">
+                            <div class="review-place-snapshot-top">
+                                <strong class="review-place-snapshot-name">${escapeHtml(r.placeName || '')}</strong>
+                                <b class="review-place-snapshot-stars">${escapeHtml(r.starsHtml || '')}</b>
+                            </div>
+                            ${r.comment ? `<div class="review-place-snapshot-comment">${escapeHtml(r.comment)}</div>` : ''}
                         </div>
-                        <div class="review-place-snapshot-rating">
-                            <b>${escapeHtml(p.stars || '★★★★ 4.5')}</b>
-                        </div>
-                    </div>
-                `).join('')}
-            </div>
-        `;
+                    `).join('')}
+                </div>
+            `;
+        } catch (e) {
+            console.error('[place-snapshot] 장소 리뷰 로드 실패', e);
+        }
     }
 
     window.openCommunityPlaceSummary = function (placeName, placeType) {
@@ -1166,7 +1172,7 @@ window._handleWriteImageSelect = function(input) {
         renderDetailMeta(post);
         renderTagsBeforePlan(post);
         renderPlanBadge(post, routeData);
-        renderPlaceSnapshot(routeData);
+        renderPlaceSnapshot(post.postId);
     }
 
     const prevOpenPostDetail = window.openPostDetail;
