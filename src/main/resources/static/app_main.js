@@ -117,6 +117,9 @@ let _lastExpenseData      = null;
 let _allActualExps        = [];
 let _expensePage          = 1;
 const _EXP_PAGE_SIZE      = 8;
+let _ledgerCardPage       = 1;
+let _myLedgerPage         = 1;
+const _LEDGER_CARD_PAGE_SIZE = 6;
 let _activeTags           = new Set();
 let _loginFailCount       = 0;
 let _loginLockedUntil     = null;
@@ -157,11 +160,10 @@ function go(id, addToHistory) {
   }
 
   //가계부 페이지 진입 시 항상 실제 데이터로 갱신
-  //page_budget.html의 DOMContentLoaded가 채워둔 더미 데이터를 덮어씀
   if (id === 'ledger') {
     loadPageCSS('/css/styles_budget.css');
     _populateLedgerTripCards();
-    const selEl  = document.getElementById('ledger-selector');
+    const selEl  = document.querySelector('.ledger-selector-outer');
     const mainEl = document.getElementById('ledger-main');
     const tripStillValid = _myTrips.some(t => t.tripId === _budgetSelectedTripId);
     if (tripStillValid) {
@@ -2633,7 +2635,8 @@ function showMySection(key, btn) {
   document.querySelectorAll('[id^="my-"]').forEach(el => {
     if (el.id.startsWith('my-') && !el.id.includes('list') && !el.id.includes('inner')
         && !el.id.includes('ledger-inner') && !el.id.includes('avatar')
-        && !el.id.includes('name') && !el.id.includes('email')) {
+        && !el.id.includes('name') && !el.id.includes('email')
+        && !el.id.includes('pager')) {
       el.style.display = 'none';
     }
   });
@@ -2656,7 +2659,7 @@ function showMySection(key, btn) {
     }
   }
   if (key === 'withdraw') initWithdrawSection();
-  if (key === 'ledger')      updateLedgerList();
+  if (key === 'ledger')      { loadPageCSS('/css/styles_budget.css'); updateLedgerList(); }
   if (key === 'scrap-stay')  loadMyScrap('stay');
   if (key === 'scrap-food')  loadMyScrap('food');
   if (key === 'scrap-tour')  loadMyScrap('tour');

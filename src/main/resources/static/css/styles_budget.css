@@ -45,6 +45,35 @@
 .ldh-meta  { font-size: 13px; font-weight: 600; color: rgba(255,255,255,.92); margin: 0; }
 .ldh-dest  { font-size: 11px; color: rgba(255,255,255,.65); margin: 3px 0 0; }
 
+/* ── 헤더 내보내기 버튼 ── */
+.ledger-hero-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-end;
+}
+.ledger-header-export {
+    display: flex;
+    gap: 8px;
+    flex-shrink: 0;
+    padding-bottom: 4px;
+}
+.btn-export-header {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 8px 16px;
+    font-size: 12px;
+    font-weight: 700;
+    border-radius: 20px;
+    border: 1.5px solid rgba(255,255,255,.4);
+    background: rgba(255,255,255,.15);
+    color: #fff;
+    cursor: pointer;
+    transition: background .15s;
+    white-space: nowrap;
+}
+.btn-export-header:hover { background: rgba(255,255,255,.28); }
+
 /* ── 본문 래퍼 ── */
 .ledger-body {
     padding: 28px 56px 48px;
@@ -72,6 +101,30 @@
 .ledger-section-ttl {
     font-size: 13px; font-weight: 700; color: var(--text); margin-bottom: 12px;
 }
+
+/* ── 탭 네비게이션 ── */
+.ledger-tabs {
+    display: flex;
+    gap: 4px;
+    margin-bottom: 18px;
+    border-bottom: 2px solid var(--border);
+    padding-bottom: 0;
+}
+.ledger-tab {
+    padding: 9px 20px;
+    font-size: 13px;
+    font-weight: 700;
+    border: none;
+    background: none;
+    color: var(--text3);
+    cursor: pointer;
+    border-bottom: 2px solid transparent;
+    margin-bottom: -2px;
+    border-radius: 6px 6px 0 0;
+    transition: color .15s, border-color .15s;
+}
+.ledger-tab:hover { color: var(--text); }
+.ledger-tab.on { color: var(--sage-d); border-bottom-color: var(--sage); }
 
 /* ── 페이지네이션 ── */
 .ledger-pager {

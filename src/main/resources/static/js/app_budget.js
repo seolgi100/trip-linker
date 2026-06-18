@@ -1,22 +1,28 @@
-/** _myTrips를 기반으로 가계부 여행 선택 UI 렌더링 */
+/** _myTrips를 기반으로 가계부 여행 선택 UI 렌더링 (페이지네이션 포함) */
 async function updateLedgerList() {
     if (!_currentUser) return;
-    const el = document.getElementById('my-ledger');
-    if (!el) return;
+    const listEl = document.getElementById('my-ledger-list');
+    if (!listEl) return;
 
     if (!_budgetSelectedTripId && _myTrips.length > 0) {
         _budgetSelectedTripId = _myTrips[0].tripId;
     }
 
-    let html = '<h3 class="my-sec-ttl">💰 가계부</h3>'
-        + '<p style="color:var(--text3);font-size:13px;margin-bottom:16px">여행을 선택하세요</p>';
-
     if (!_myTrips.length) {
-        html += '<div style="color:var(--text3);font-size:13px;padding:20px 0;text-align:center">가계부 기록이 없습니다.</div>';
-    } else {
-        _myTrips.forEach(l => {
-            const isSel = (_budgetSelectedTripId === l.tripId);
-            html += `
+        listEl.innerHTML = '<div style="color:var(--text3);font-size:13px;padding:20px 0;text-align:center">가계부 기록이 없습니다.</div>';
+        _drawMyLedgerPager(0);
+        return;
+    }
+
+    const total = _myTrips.length;
+    const totalPages = Math.ceil(total / _LEDGER_CARD_PAGE_SIZE);
+    if (_myLedgerPage > totalPages) _myLedgerPage = totalPages;
+    const start = (_myLedgerPage - 1) * _LEDGER_CARD_PAGE_SIZE;
+    const pageTrips = _myTrips.slice(start, start + _LEDGER_CARD_PAGE_SIZE);
+
+    listEl.innerHTML = pageTrips.map(l => {
+        const isSel = (_budgetSelectedTripId === l.tripId);
+        return `
         <div onclick="selLedger(${l.tripId})"
              style="display:flex;align-items:center;gap:14px;padding:14px 16px;border-radius:var(--r);
                     border:2px solid ${isSel ? 'var(--sage)' : 'var(--border)'};
@@ -34,10 +40,28 @@ async function updateLedgerList() {
             ${l.status === 'CONFIRMED' ? '✅' : '📝'}
           </div>
         </div>`;
-        });
-        html += '<button class="btn-f" style="padding:12px 22px;border-radius:var(--r);font-size:14px;margin-top:4px" onclick="goLedger2()">가계부 상세 보기 →</button>';
-    }
-    el.innerHTML = html;
+    }).join('');
+
+    _drawMyLedgerPager(totalPages);
+}
+
+function _drawMyLedgerPager(totalPages) {
+    const el = document.getElementById('my-ledger-pager');
+    if (!el) return;
+    if (totalPages <= 1) { el.innerHTML = ''; return; }
+    const prev = `<button class="pager-btn" onclick="_setMyLedgerPage(${_myLedgerPage - 1})" ${_myLedgerPage === 1 ? 'disabled style="opacity:.4;cursor:default"' : ''}>‹</button>`;
+    const next = `<button class="pager-btn" onclick="_setMyLedgerPage(${_myLedgerPage + 1})" ${_myLedgerPage === totalPages ? 'disabled style="opacity:.4;cursor:default"' : ''}>›</button>`;
+    const nums = Array.from({ length: totalPages }, (_, i) => i + 1)
+        .map(n => `<button class="pager-btn${n === _myLedgerPage ? ' on' : ''}" onclick="_setMyLedgerPage(${n})">${n}</button>`)
+        .join('');
+    el.innerHTML = `<div class="ledger-pager" style="margin-top:4px;margin-bottom:12px">${prev}${nums}${next}</div>`;
+}
+
+function _setMyLedgerPage(n) {
+    const totalPages = Math.ceil((_myTrips || []).length / _LEDGER_CARD_PAGE_SIZE);
+    if (n < 1 || n > totalPages) return;
+    _myLedgerPage = n;
+    updateLedgerList();
 }
 
 function selLedger(tripId) {
@@ -51,15 +75,22 @@ async function goLedger2() {
     go('ledger');
 }
 
-/** ledger-selector 내 여행 카드를 실제 _myTrips 데이터로 채우기 */
+/** ledger-selector 내 여행 카드를 실제 _myTrips 데이터로 채우기 (페이지네이션 포함) */
 function _populateLedgerTripCards() {
     const container = document.getElementById('ledger-trip-cards');
     if (!container) return;
     if (!_myTrips || !_myTrips.length) {
         container.innerHTML = '<div style="color:var(--text3);font-size:13px;padding:20px 0;text-align:center">등록된 여행이 없습니다.</div>';
+        _drawLedgerCardPager(0);
         return;
     }
-    container.innerHTML = _myTrips.map(t => {
+    const total = _myTrips.length;
+    const totalPages = Math.ceil(total / _LEDGER_CARD_PAGE_SIZE);
+    if (_ledgerCardPage > totalPages) _ledgerCardPage = totalPages;
+    const start = (_ledgerCardPage - 1) * _LEDGER_CARD_PAGE_SIZE;
+    const pageTrips = _myTrips.slice(start, start + _LEDGER_CARD_PAGE_SIZE);
+
+    container.innerHTML = pageTrips.map(t => {
         const isSel = (_budgetSelectedTripId === t.tripId);
         return `
       <div class="ts-card${isSel ? ' on' : ''}" onclick="_selLedgerCard(this, ${t.tripId})">
@@ -71,9 +102,31 @@ function _populateLedgerTripCards() {
         <div class="ts-budget" style="font-size:13px;font-weight:700;color:var(--text2)">${t.status === 'CONFIRMED' ? '✅ 확정' : '📝 초안'}</div>
       </div>`;
     }).join('');
+
+    _drawLedgerCardPager(totalPages);
+
     // 버튼 onclick을 실제 API 연동 함수로 교체
     const btn = document.querySelector('#ledger-selector .btn-next');
     if (btn) btn.onclick = goLedger2;
+}
+
+function _drawLedgerCardPager(totalPages) {
+    const el = document.getElementById('ledger-card-pager');
+    if (!el) return;
+    if (totalPages <= 1) { el.innerHTML = ''; return; }
+    const prev = `<button class="pager-btn" onclick="_setLedgerCardPage(${_ledgerCardPage - 1})" ${_ledgerCardPage === 1 ? 'disabled style="opacity:.4;cursor:default"' : ''}>‹</button>`;
+    const next = `<button class="pager-btn" onclick="_setLedgerCardPage(${_ledgerCardPage + 1})" ${_ledgerCardPage === totalPages ? 'disabled style="opacity:.4;cursor:default"' : ''}>›</button>`;
+    const nums = Array.from({ length: totalPages }, (_, i) => i + 1)
+        .map(n => `<button class="pager-btn${n === _ledgerCardPage ? ' on' : ''}" onclick="_setLedgerCardPage(${n})">${n}</button>`)
+        .join('');
+    el.innerHTML = `<div class="ledger-pager" style="margin-top:10px;margin-bottom:4px">${prev}${nums}${next}</div>`;
+}
+
+function _setLedgerCardPage(n) {
+    const totalPages = Math.ceil((_myTrips || []).length / _LEDGER_CARD_PAGE_SIZE);
+    if (n < 1 || n > totalPages) return;
+    _ledgerCardPage = n;
+    _populateLedgerTripCards();
 }
 
 function _selLedgerCard(el, tripId) {
@@ -86,7 +139,8 @@ function _selLedgerCard(el, tripId) {
 /** page_budget.html의 returnToLedgerSelector() 오버라이드 — 실제 데이터 사용 */
 function returnToLedgerSelector() {
     document.getElementById('ledger-main').style.display = 'none';
-    document.getElementById('ledger-selector').style.display = 'block';
+    const selEl = document.querySelector('.ledger-selector-outer');
+    if (selEl) selEl.style.display = 'block';
     _populateLedgerTripCards();
 }
 
@@ -639,6 +693,13 @@ async function deleteExpense(id) {
     if (!res.success) { toast('삭제 실패: ' + res.message); return; }
     toast('삭제됐습니다.');
     await _loadExpenses(_budgetSelectedTripId);
+}
+
+function switchLedgerTab(tab, btn) {
+    document.querySelectorAll('.ledger-tab').forEach(b => b.classList.remove('on'));
+    btn.classList.add('on');
+    document.getElementById('ledger-tab-charts').style.display  = tab === 'charts'  ? '' : 'none';
+    document.getElementById('ledger-tab-history').style.display = tab === 'history' ? '' : 'none';
 }
 
 /** 가계부 PDF 자동 다운로드 (jsPDF + html2canvas) */
