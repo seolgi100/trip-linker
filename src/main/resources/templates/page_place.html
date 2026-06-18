@@ -604,6 +604,9 @@
 
             const place = Array.isArray(res.data) ? res.data[0] : res.data;
 
+            window._currentPlaceId       = place.id || place.placeId || null;
+            window._currentPlaceCategory = place.category || place.type || 'tour';
+
             // 헤더
             if (headerEl) headerEl.innerHTML = `
     <div class="prc-icon" style="background:var(--sage-pale);font-size:22px">
@@ -688,8 +691,14 @@
          * 11. 장소 스크랩 (커뮤니티 스크랩 패턴 활용)
          * ──────────────────────────────────────────────── */
         async function doPlaceScrap() {
-            if (!Token.getAccess()) { toast('로그인이 필요합니다.'); go('login'); return; }
-            toast('★ 스크랩 완료!');
+            if (!window._commUtil?.requireLogin()) {
+                toast('로그인이 필요합니다.'); go('login'); return;
+            }
+            const placeId = window._currentPlaceId;
+            if (!placeId) { toast('장소 정보를 찾을 수 없습니다.'); return; }
+            const category = window._currentPlaceCategory || 'tour';
+            const res = await api.post(`/api/places/${placeId}/scraps`, { category });
+            toast(res?.success !== false ? '★ 스크랩했습니다!' : (res?.message || '이미 스크랩한 장소입니다.'));
         }
 
         /* ────────────────────────────────────────────────
