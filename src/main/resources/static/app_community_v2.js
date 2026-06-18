@@ -2888,3 +2888,423 @@
         await window.openPostDetail(postId);
     };
 })();
+
+/* =============================================================================
+ * community v2 - 마이페이지 작성 후기 수정/삭제 실제 API 연결
+ * app_main.js 수정 금지 → 여기서 window 함수 덮어쓰기
+ * ============================================================================= */
+(function () {
+    'use strict';
+
+    function getAccessToken() {
+        if (typeof Token !== 'undefined' && Token.getAccess) {
+            return Token.getAccess();
+        }
+
+        return localStorage.getItem('accessToken')
+            || localStorage.getItem('access_token')
+            || sessionStorage.getItem('accessToken')
+            || sessionStorage.getItem('access_token');
+    }
+
+    function authHeaders(json) {
+        const token = getAccessToken();
+
+        const headers = {};
+
+        if (json) {
+            headers['Content-Type'] = 'application/json';
+        }
+
+        if (token) {
+            headers['Authorization'] = 'Bearer ' + token;
+        }
+
+        return headers;
+    }
+
+    function esc(value) {
+        return String(value ?? '')
+            .replaceAll('&', '&amp;')
+            .replaceAll('<', '&lt;')
+            .replaceAll('>', '&gt;')
+            .replaceAll('"', '&quot;')
+            .replaceAll("'", '&#039;');
+    }
+
+    function extractPosts(res) {
+        if (Array.isArray(res)) return res;
+        if (Array.isArray(res?.data)) return res.data;
+        if (Array.isArray(res?.data?.content)) return res.data.content;
+        if (Array.isArray(res?.content)) return res.content;
+        return [];
+    }
+
+    async function requestJson(url, options) {
+        const response = await fetch(url, options);
+
+        let data = null;
+
+        try {
+            data = await response.json();
+        } catch (e) {
+            data = null;
+        }
+
+        if (!response.ok) {
+            throw new Error(data?.message || '요청 처리에 실패했습니다.');
+        }
+
+        return data;
+    }
+
+    async function loadMyPostsForCommunityV2() {
+        /*
+         * PostController 기준:
+         * @RequestMapping("/api/posts")
+         * @GetMapping("/me")
+         * → /api/posts/me
+         */
+        const res = await requestJson('/api/posts/me', {
+            method: 'GET',
+            headers: authHeaders(false)
+        });
+
+        return extractPosts(res);
+    }
+
+    async function reloadCommunityListForCommunityV2() {
+        if (typeof window.loadCommunityPosts === 'function') {
+            await window.loadCommunityPosts(0, true);
+            return;
+        }
+
+        if (typeof window.loadPosts === 'function') {
+            await window.loadPosts();
+        }
+    }
+
+    window._renderMyReviews = async function () {
+        const listEl = document.getElementById('my-reviews-list');
+
+        if (!listEl) return;
+
+        listEl.innerHTML =
+            '<div style="color:var(--text3);font-size:13px;padding:20px 0;text-align:center">후기를 불러오는 중...</div>';
+
+        let posts = [];
+
+        try {
+            posts = await loadMyPostsForCommunityV2();
+        } catch (e) {
+            listEl.innerHTML =
+                '<p style="color:var(--text3);font-size:13px">작성한 후기를 불러오지 못했습니다.</p>';
+
+            if (typeof toast === 'function') {
+                toast(e.message || '작성한 후기를 불러오지 못했습니다.');
+            }
+
+            return;
+        }
+
+        if (!posts.length) {
+            listEl.innerHTML =
+                '<p style="color:var(--text3);font-size:13px">작성한 후기가 없습니다.</p>';
+            return;
+        }
+
+        listEl.innerHTML = posts.map(function (post) {
+            const postId = post.postId || post.id;
+            const title = post.title || '제목 없음';
+            const likes = post.likes ?? post.likeCount ?? 0;
+            const views = post.views ?? post.viewCount ?? 0;
+            const category = post.catLabel || post.category || '후기';
+            const catClass = post.catClass || '';
+
+            return `
+                <div class="post-card"
+                     data-my-post-id="${esc(postId)}"
+                     onclick="openPostDetail(${esc(postId)})">
+
+                    <span class="post-cat ${esc(catClass)}">${esc(category)}</span>
+
+                    <div class="post-ttl" style="margin-top:5px">
+                        ${esc(title)}
+                    </div>
+
+                    <div class="post-foot">
+                        <div class="post-stats">
+                            <span class="post-stat">❤️ ${esc(likes)}</span>
+                            ${views ? `<span class="post-stat">👁 ${esc(views)}</span>` : ''}
+                        </div>
+
+                        <div style="display:flex;gap:6px">
+                            <button class="btn-scrap"
+                                    onclick="event.stopPropagation(); editMyPost(${esc(postId)})">
+                                ✏️ 수정
+                            </button>
+
+                            <button class="btn-scrap"
+                                    style="color:var(--coral);border-color:var(--coral)"
+                                    onclick="event.stopPropagation(); deleteMyPost(${esc(postId)})">
+                                삭제
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }).join('');
+    };
+
+    window.editMyPost = async function (postId) {
+        if (!postId) {
+            if (typeof toast === 'function') toast('게시글 정보를 찾을 수 없습니다.');
+            return;
+        }
+
+        let postRes;
+
+        try {
+            postRes = await requestJson('/api/posts/' + postId, {
+                method: 'GET',
+                headers: authHeaders(false)
+            });
+        } catch (e) {
+            if (typeof toast === 'function') toast(e.message || '게시글 정보를 불러오지 못했습니다.');
+            return;
+        }
+
+        const post = postRes?.data || postRes;
+
+        const newTitle = prompt('수정할 제목을 입력하세요.', post.title || '');
+        if (newTitle === null) return;
+
+        const newContent = prompt('수정할 내용을 입력하세요.', post.content || '');
+        if (newContent === null) return;
+
+        const title = newTitle.trim();
+        const content = newContent.trim();
+
+        if (!title || !content) {
+            if (typeof toast === 'function') toast('제목과 내용을 모두 입력해주세요.');
+            return;
+        }
+
+        const body = {
+            title: title,
+            content: content,
+            styleTags: Array.isArray(post.styleTags)
+                ? post.styleTags.join(',')
+                : (post.styleTags || ''),
+            category: post.category || 'ROUTE',
+            isPublic: post.isPublic ?? true,
+            planId: post.planId || null
+        };
+
+        try {
+            await requestJson('/api/posts/' + postId, {
+                method: 'PATCH',
+                headers: authHeaders(true),
+                body: JSON.stringify(body)
+            });
+
+            if (typeof toast === 'function') toast('후기가 수정되었습니다.');
+
+            await window._renderMyReviews();
+            await reloadCommunityListForCommunityV2();
+
+        } catch (e) {
+            if (typeof toast === 'function') toast(e.message || '수정에 실패했습니다.');
+        }
+    };
+
+    window.deleteMyPost = async function (postId) {
+        if (!postId) {
+            if (typeof toast === 'function') toast('게시글 정보를 찾을 수 없습니다.');
+            return;
+        }
+
+        if (!confirm('게시글을 삭제하시겠습니까?')) return;
+
+        try {
+            /*
+             * PostController 기준:
+             * @DeleteMapping("/{postId}")
+             * → DELETE /api/posts/{postId}
+             */
+            await fetch('/api/posts/' + postId, {
+                method: 'DELETE',
+                headers: authHeaders(false)
+            }).then(function (response) {
+                if (!response.ok) {
+                    throw new Error('삭제에 실패했습니다.');
+                }
+            });
+
+            if (typeof toast === 'function') toast('게시글이 삭제되었습니다.');
+
+            const card = document.querySelector('[data-my-post-id="' + postId + '"]');
+            if (card) card.remove();
+
+            await window._renderMyReviews();
+            await reloadCommunityListForCommunityV2();
+
+        } catch (e) {
+            if (typeof toast === 'function') toast(e.message || '삭제에 실패했습니다.');
+        }
+    };
+
+    /*
+     * 마이페이지로 이동했을 때 app_main.js가 먼저 렌더링하더라도,
+     * 나중에 우리 함수로 다시 덮어 렌더링한다.
+     */
+    const prevGoForMyReviews = window.go;
+
+    if (typeof prevGoForMyReviews === 'function' && !prevGoForMyReviews.__communityMyReviewWrapped) {
+        window.go = function (id, addToHistory) {
+            const result = prevGoForMyReviews.apply(this, arguments);
+
+            if (id === 'mypage') {
+                setTimeout(function () {
+                    window._renderMyReviews();
+                }, 300);
+            }
+
+            return result;
+        };
+
+        window.go.__communityMyReviewWrapped = true;
+    }
+
+    document.addEventListener('DOMContentLoaded', function () {
+        setTimeout(function () {
+            if (document.getElementById('my-reviews-list')) {
+                window._renderMyReviews();
+            }
+        }, 700);
+    });
+})();
+
+/* =============================================================================
+ * community v2 - 좋아요/스크랩 버튼 색상 유지
+ * ============================================================================= */
+(function () {
+    'use strict';
+
+    const ACTIVE_COLOR = '#46B29E';
+
+    function getCurrentPostId() {
+        return window._currentPostId
+            || window._openedPostId
+            || window._currentPostDetail?.postId
+            || window._currentPostDetail?.id
+            || null;
+    }
+
+    function findActionButton(keyword) {
+        return [...document.querySelectorAll('#page-review button, #page-review .btn-f, #page-review .btn-scrap')]
+            .find(function (btn) {
+                return (btn.textContent || '').includes(keyword);
+            });
+    }
+
+    function setButtonState(btn, active) {
+        if (!btn) return;
+
+        if (active) {
+            btn.classList.add('community-action-active');
+            btn.style.background = ACTIVE_COLOR;
+            btn.style.borderColor = ACTIVE_COLOR;
+            btn.style.color = '#fff';
+        } else {
+            btn.classList.remove('community-action-active');
+            btn.style.background = '';
+            btn.style.borderColor = '';
+            btn.style.color = '';
+        }
+    }
+
+    function applyActionState() {
+        const post = window._currentPostDetail;
+        if (!post) return;
+
+        setButtonState(findActionButton('좋아요'), !!post.likedByMe);
+        setButtonState(findActionButton('스크랩'), !!post.scrappedByMe);
+    }
+
+    const prevOpenPostDetailForAction = window.openPostDetail;
+
+    if (typeof prevOpenPostDetailForAction === 'function' && !prevOpenPostDetailForAction.__communityActionStateWrapped) {
+        window.openPostDetail = async function (postId) {
+            const result = await prevOpenPostDetailForAction.apply(this, arguments);
+
+            setTimeout(applyActionState, 50);
+            setTimeout(applyActionState, 300);
+            setTimeout(applyActionState, 800);
+
+            return result;
+        };
+
+        window.openPostDetail.__communityActionStateWrapped = true;
+    }
+
+    window.doReviewLike = async function () {
+        if (typeof Token !== 'undefined' && Token.getAccess && !Token.getAccess()) {
+            if (typeof toast === 'function') toast('로그인이 필요합니다.');
+            if (typeof go === 'function') go('login');
+            return;
+        }
+
+        const postId = getCurrentPostId();
+
+        if (!postId) {
+            if (typeof toast === 'function') toast('게시글 정보를 찾을 수 없습니다.');
+            return;
+        }
+
+        const res = await api.post('/api/posts/' + postId + '/likes', {});
+        const liked = res?.data === true;
+
+        if (window._currentPostDetail) {
+            window._currentPostDetail.likedByMe = liked;
+        }
+
+        if (typeof toast === 'function') {
+            toast(liked ? '좋아요를 눌렀습니다.' : '좋아요를 취소했습니다.');
+        }
+
+        await window.openPostDetail(postId);
+        setTimeout(applyActionState, 100);
+    };
+
+    window.doReviewScrap = async function () {
+        if (typeof Token !== 'undefined' && Token.getAccess && !Token.getAccess()) {
+            if (typeof toast === 'function') toast('로그인이 필요합니다.');
+            if (typeof go === 'function') go('login');
+            return;
+        }
+
+        const postId = getCurrentPostId();
+
+        if (!postId) {
+            if (typeof toast === 'function') toast('게시글 정보를 찾을 수 없습니다.');
+            return;
+        }
+
+        const category = window._currentPostCategory || window._currentPostDetail?.category || 'ROUTE';
+
+        const res = await api.post('/api/posts/' + postId + '/scraps?category=' + category, {});
+        const scrapped = res?.data === true;
+
+        if (window._currentPostDetail) {
+            window._currentPostDetail.scrappedByMe = scrapped;
+        }
+
+        if (typeof toast === 'function') {
+            toast(scrapped ? '스크랩했습니다.' : '스크랩을 취소했습니다.');
+        }
+
+        await window.openPostDetail(postId);
+        setTimeout(applyActionState, 100);
+    };
+})();
