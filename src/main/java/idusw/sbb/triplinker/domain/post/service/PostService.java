@@ -2,14 +2,20 @@ package idusw.sbb.triplinker.domain.post.service;
 
 import idusw.sbb.triplinker.domain.plan.entity.TravelPlan;
 import idusw.sbb.triplinker.domain.plan.repository.TravelPlanRepository;
+import idusw.sbb.triplinker.domain.place.entity.Place;
+import idusw.sbb.triplinker.domain.place.service.PlaceService;
+import idusw.sbb.triplinker.domain.post.dto.PlaceReviewResponseDto;
+import idusw.sbb.triplinker.domain.post.dto.PlaceReviewSaveDto;
 import idusw.sbb.triplinker.domain.post.dto.PostDetailResponseDto;
 import idusw.sbb.triplinker.domain.post.dto.PostListResponseDto;
 import idusw.sbb.triplinker.domain.post.dto.PostWriteDto;
+import idusw.sbb.triplinker.domain.post.entity.PlaceReview;
 import idusw.sbb.triplinker.domain.post.entity.Post;
 import idusw.sbb.triplinker.domain.post.entity.PostComment;
 import idusw.sbb.triplinker.domain.post.entity.PostImage;
 import idusw.sbb.triplinker.domain.post.entity.PostLike;
 import idusw.sbb.triplinker.domain.post.entity.PostScrap;
+import idusw.sbb.triplinker.domain.post.repository.PlaceReviewRepository;
 import idusw.sbb.triplinker.domain.post.repository.PostCommentRepository;
 import idusw.sbb.triplinker.domain.post.repository.PostImageRepository;
 import idusw.sbb.triplinker.domain.post.repository.PostLikeRepository;
@@ -38,6 +44,8 @@ public class PostService {
     private final PostCommentRepository postCommentRepository;
     private final PostScrapRepository postScrapRepository;
     private final PostImageRepository postImageRepository;
+    private final PlaceReviewRepository placeReviewRepository;
+    private final PlaceService placeService;
     private final UserRepository userRepository;
     private final TravelPlanRepository travelPlanRepository;
     private final LocalFileService localFileService;
@@ -364,6 +372,43 @@ public class PostService {
                 .getContent()
                 .stream()
                 .map(PostDetailResponseDto.CommentInfo::from)
+                .collect(Collectors.toList());
+    }
+
+    // 장소 리뷰 저장 — 없는 장소는 자동 생성
+    @Transactional
+    public void savePlaceReviews(Long userId, Long postId, PlaceReviewSaveDto dto) {
+        if (dto == null || dto.getReviews() == null || dto.getReviews().isEmpty()) return;
+
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new IllegalArgumentException("유저를 찾을 수 없습니다."));
+        Post post = postRepository.findById(postId)
+                .orElseThrow(() -> new IllegalArgumentException("게시글을 찾을 수 없습니다."));
+
+        dto.getReviews().forEach(item -> {
+            if (item.getPlaceName() == null || item.getPlaceName().isBlank()) return;
+
+            Place place = placeService.findOrCreatePlace(
+                    item.getPlaceName().trim(),
+                    item.getPlaceType() != null ? item.getPlaceType().trim() : "tour",
+                    null, null);
+            if (place == null) return; // 매핑 불가 타입이면 스킵
+
+            placeReviewRepository.save(PlaceReview.builder()
+                    .place(place)
+                    .post(post)
+                    .user(user)
+                    .rating(Math.max(1, Math.min(5, item.getRating())))
+                    .comment(item.getComment() != null ? item.getComment().trim() : null)
+                    .build());
+        });
+    }
+
+    // 게시글별 장소 리뷰 목록 조회
+    public List<PlaceReviewResponseDto> getPlaceReviewsByPost(Long postId) {
+        return placeReviewRepository.findByPost_IdOrderByCreatedAtDesc(postId)
+                .stream()
+                .map(PlaceReviewResponseDto::from)
                 .collect(Collectors.toList());
     }
 }

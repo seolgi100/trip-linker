@@ -1,6 +1,8 @@
 package idusw.sbb.triplinker.domain.post.controller;
 
 import idusw.sbb.triplinker.domain.auth.security.CustomUserDetails;
+import idusw.sbb.triplinker.domain.post.dto.PlaceReviewResponseDto;
+import idusw.sbb.triplinker.domain.post.dto.PlaceReviewSaveDto;
 import idusw.sbb.triplinker.domain.post.dto.PostDetailResponseDto;
 import idusw.sbb.triplinker.domain.post.dto.PostListResponseDto;
 import idusw.sbb.triplinker.domain.post.dto.PostWriteDto;
@@ -20,8 +22,6 @@ import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
 import java.util.ArrayList;
-import java.util.List;
-
 import java.util.List;
 
 @RestController
@@ -198,5 +198,26 @@ public class PostController {
         ReportRequestDto reportDto = new ReportRequestDto(postId, dto.getReason());
         Long reportId = systemService.reportPost(userDetails.getUserId(), reportDto);
         return ResponseEntity.ok(reportId);
+    }
+
+    // 장소 리뷰 저장
+    @PostMapping("/{postId}/place-reviews")
+    public ResponseEntity<Void> savePlaceReviews(
+            @AuthenticationPrincipal CustomUserDetails userDetails,
+            @PathVariable Long postId,
+            @RequestBody PlaceReviewSaveDto dto
+    ) {
+        postService.savePlaceReviews(userDetails.getUserId(), postId, dto);
+        return ResponseEntity.ok().build();
+    }
+
+    // 게시글별 장소 리뷰 조회
+    @GetMapping("/{postId}/place-reviews")
+    public ResponseEntity<ApiResponse<List<PlaceReviewResponseDto>>> getPlaceReviewsByPost(
+            @PathVariable Long postId
+    ) {
+        return ResponseEntity.ok(
+                ApiResponse.success("장소 리뷰 조회 성공", postService.getPlaceReviewsByPost(postId))
+        );
     }
 }
