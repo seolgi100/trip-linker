@@ -11,6 +11,7 @@ import org.springframework.data.repository.query.Param;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Optional;
 
 public interface TravelPlanRepository extends JpaRepository<TravelPlan, Long> {
 
@@ -45,4 +46,5 @@ public interface TravelPlanRepository extends JpaRepository<TravelPlan, Long> {
 
     // TODO: 확정 기능 구현 후 PlaceService.parseAndSavePlacesFromAllPlans() 에서 사용
     List<TravelPlan> findByStatus(String status);
+
 }
