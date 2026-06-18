@@ -448,6 +448,7 @@
 
         window._currentPostId = postId;
         window._openedPostId = postId;
+        sessionStorage.setItem('communityCurrentPostId', String(postId));
 
         if (typeof go === 'function') {
             go('review');
@@ -1598,6 +1599,7 @@
             const div = document.createElement('div');
             div.className = 'comm-post-item';
             div.setAttribute('data-tags', tags.join(','));
+            div.setAttribute('data-content', post.content || '');
             div.setAttribute('data-author', writerText);
             div.setAttribute('data-likes', likes);
             div.setAttribute('data-scrap', scraps);
@@ -2747,4 +2749,244 @@
             return result;
         };
     }
+})();/* =============================================================================
+ * community v2 - 상세 페이지 새로고침 복구
+ * 목적:
+ * - 후기 상세 화면에서 새로고침했을 때 postId가 사라져 화면이 깨지는 문제 방지
+ * - 마지막으로 열었던 게시글 ID를 sessionStorage에서 꺼내 다시 조회
+ * ============================================================================= */
+
+(function () {
+    'use strict';
+
+    function isReviewPageVisible() {
+        const reviewPage = document.getElementById('page-review');
+
+        if (!reviewPage) return false;
+
+        const style = window.getComputedStyle(reviewPage);
+
+        return style.display !== 'none' && style.visibility !== 'hidden';
+    }
+
+    window.restoreCommunityReviewDetail = function () {
+        const savedPostId = sessionStorage.getItem('communityCurrentPostId');
+
+        if (!savedPostId) return;
+
+
+        // 이미 상세 데이터가 있으면 다시 호출하지 않는다.
+
+        if (window._currentPostDetail && String(window._currentPostId) === String(savedPostId)) {
+            return;
+        }
+
+
+        // 상세 페이지가 보이는 상태에서만 복구한다.
+
+        if (!isReviewPageVisible()) {
+            return;
+        }
+
+        if (typeof window.openPostDetail === 'function') {
+            window.openPostDetail(savedPostId);
+        }
+    };
+
+    document.addEventListener('DOMContentLoaded', function () {
+        setTimeout(window.restoreCommunityReviewDetail, 500);
+        setTimeout(window.restoreCommunityReviewDetail, 1200);
+    });
+
+
+    // go('review')로 화면 전환된 직후에도 한 번 더 복구 시도
+
+    const originalGoForCommunityRestore = window.go;
+
+    if (typeof originalGoForCommunityRestore === 'function' && !originalGoForCommunityRestore.__communityRestoreWrapped) {
+        window.go = function (id, addToHistory) {
+            const result = originalGoForCommunityRestore.apply(this, arguments);
+
+            if (id === 'review') {
+                setTimeout(window.restoreCommunityReviewDetail, 300);
+            }
+
+            return result;
+        };
+
+        window.go.__communityRestoreWrapped = true;
+    }
+})();
+
+/* =============================================================================
+ * community v2 - 검색 기능 보정
+ * 목적:
+ * - page_community.html은 수정하지 않고 doSearch만 확실히 덮어쓰기
+ * - 제목/내용/작성자/태그 검색을 각각 분리
+ * - 검색어가 비어 있으면 현재 탭 전체 목록 다시 표시
+ * ============================================================================= */
+
+(function () {
+    'use strict';
+
+    function getCurrentTabKeyForSearch() {
+        const activeTab = document.querySelector('#commTabs .comm-tab.on');
+
+        if (activeTab) {
+            const text = activeTab.textContent.trim();
+
+            if (text.includes('숙소')) return 'stay';
+            if (text.includes('맛집')) return 'food';
+            if (text.includes('관광지')) return 'tour';
+            if (text.includes('카페')) return 'cafe';
+            if (text.includes('여행 경로')) return 'route';
+        }
+
+        if (typeof _commState !== 'undefined' && _commState.currentTab) {
+            return _commState.currentTab;
+        }
+
+        return 'route';
+    }
+
+    function getCurrentTabElement() {
+        const currentTab = getCurrentTabKeyForSearch();
+        return document.getElementById('tab-' + currentTab);
+    }
+
+    function showAllCurrentTabItems() {
+        const tabEl = getCurrentTabElement();
+        if (!tabEl) return 0;
+
+        let count = 0;
+
+        tabEl.querySelectorAll('.comm-post-item').forEach(function (item) {
+            item.style.display = '';
+            count++;
+        });
+
+        const oldEmpty = document.getElementById('community-search-empty');
+        if (oldEmpty) oldEmpty.remove();
+
+        return count;
+    }
+
+    function showSearchEmptyMessage(tabEl) {
+        const oldEmpty = document.getElementById('community-search-empty');
+        if (oldEmpty) oldEmpty.remove();
+
+        const empty = document.createElement('div');
+        empty.id = 'community-search-empty';
+        empty.style.padding = '40px 20px';
+        empty.style.textAlign = 'center';
+        empty.style.color = 'var(--text3)';
+        empty.style.fontSize = '14px';
+        empty.textContent = '검색 결과가 없습니다.';
+
+        tabEl.appendChild(empty);
+    }
+
+    function hideSearchEmptyMessage() {
+        const oldEmpty = document.getElementById('community-search-empty');
+        if (oldEmpty) oldEmpty.remove();
+    }
+
+    function communityV2Search() {
+        const typeEl = document.getElementById('searchType');
+        const inputEl = document.getElementById('searchInp');
+
+        const type = typeEl ? typeEl.value : 'title';
+        const q = inputEl ? inputEl.value.trim().toLowerCase() : '';
+
+        const tabEl = getCurrentTabElement();
+        if (!tabEl) return;
+
+        /*
+         * 검색어가 없으면 현재 탭 전체 목록 복구
+         */
+        if (!q) {
+            const count = showAllCurrentTabItems();
+
+            if (typeof toast === 'function') {
+                toast('전체 목록을 표시합니다. (' + count + '건)');
+            }
+
+            return;
+        }
+
+        hideSearchEmptyMessage();
+
+        let found = 0;
+
+        tabEl.querySelectorAll('.comm-post-item').forEach(function (item) {
+            const title = (item.querySelector('.post-ttl')?.textContent || '').toLowerCase();
+            const content = (item.getAttribute('data-content') || '').toLowerCase();
+            const author = (item.getAttribute('data-author') || '').toLowerCase();
+            const tags = (item.getAttribute('data-tags') || '').toLowerCase();
+
+            let match = false;
+
+            if (type === 'title') {
+                match = title.includes(q);
+            } else if (type === 'content') {
+                match = content.includes(q);
+            } else if (type === 'author') {
+                match = author.includes(q);
+            } else if (type === 'tag') {
+                match = tags.includes(q);
+            }
+
+            item.style.display = match ? '' : 'none';
+
+            if (match) found++;
+        });
+
+        if (found === 0) {
+            showSearchEmptyMessage(tabEl);
+        }
+
+        if (typeof toast === 'function') {
+            toast('"' + q + '" 검색 결과: ' + found + '건');
+        }
+    }
+
+    /*
+     * page_community.html 안의 doSearch를 건드리지 않고,
+     * app_community_v2.js에서 더 나중에 확실히 덮어쓴다.
+     */
+    function installCommunityV2Search() {
+        window.doSearch = communityV2Search;
+
+        const searchBtn = document.querySelector('.btn-search');
+        if (searchBtn) {
+            searchBtn.onclick = function (e) {
+                if (e) e.preventDefault();
+                communityV2Search();
+            };
+        }
+
+        const searchInput = document.getElementById('searchInp');
+        if (searchInput && !searchInput.__communityV2SearchBound) {
+            searchInput.addEventListener('keydown', function (e) {
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    communityV2Search();
+                }
+            });
+
+            searchInput.__communityV2SearchBound = true;
+        }
+    }
+
+    installCommunityV2Search();
+
+    document.addEventListener('DOMContentLoaded', function () {
+        setTimeout(installCommunityV2Search, 300);
+        setTimeout(installCommunityV2Search, 1000);
+        setTimeout(installCommunityV2Search, 2000);
+    });
+
+    window.addEventListener('load', function () {
+        setTimeout(installCommunityV2Search, 300);
+    });
 })();
