@@ -38,48 +38,48 @@ public class DummyDataInit implements CommandLineRunner {
     }
 
     //유저 + 게시글 더미
-    private void createUserAndPostDummies() {
-        if (userRepository.findByUsername("posttest").isPresent()) return;
-
-        User dummyUser = userRepository.save(User.builder()
-                .username("posttest")
-                .passwordHash(passwordEncoder.encode("Asdf1234!"))
-                .name("김테스트")
-                .email("test@test")
-                .region("서울")
-                .role("USER")
-                .status("ACTIVE")
-                .lastPwChangedAt(LocalDateTime.now())
-                .build());
-
-        Post post1 = Post.builder()
-                .user(dummyUser)
-                .title("제주도 3박 4일 가성비 힐링 코스")
-                .content("정말 재밌는 여행이었습니다. 강력 추천!")
-                .styleTags("[\"가성비\", \"힐링\"]")
-                .isPublic(true)
-                .build();
-        post1.increaseViewCount();
-        post1.increaseLikeCount();
-
-        Post post2 = Post.builder()
-                .user(dummyUser)
-                .title("부산 바다뷰 카페 투어 후기")
-                .content("바다 뷰가 끝내주네요.")
-                .styleTags("[\"바다뷰\", \"카페\"]")
-                .isPublic(true)
-                .build();
-
-        postRepository.save(post1);
-        postRepository.save(post2);
-
-        postLikeRepository.save(PostLike.builder()
-                .user(dummyUser)
-                .post(post1)
-                .build());
-
-        System.out.println("===== [더미] 유저 + 게시글 생성 완료 =====");
-    }
+//    private void createUserAndPostDummies() {
+//        if (userRepository.findByUsername("posttest").isPresent()) return;
+//
+//        User dummyUser = userRepository.save(User.builder()
+//                .username("posttest")
+//                .passwordHash(passwordEncoder.encode("Asdf1234!"))
+//                .name("김테스트")
+//                .email("test@test")
+//                .region("서울")
+//                .role("USER")
+//                .status("ACTIVE")
+//                .lastPwChangedAt(LocalDateTime.now())
+//                .build());
+//
+//        Post post1 = Post.builder()
+//                .user(dummyUser)
+//                .title("제주도 3박 4일 가성비 힐링 코스")
+//                .content("정말 재밌는 여행이었습니다. 강력 추천!")
+//                .styleTags("[\"가성비\", \"힐링\"]")
+//                .isPublic(true)
+//                .build();
+//        post1.increaseViewCount();
+//        post1.increaseLikeCount();
+//
+//        Post post2 = Post.builder()
+//                .user(dummyUser)
+//                .title("부산 바다뷰 카페 투어 후기")
+//                .content("바다 뷰가 끝내주네요.")
+//                .styleTags("[\"바다뷰\", \"카페\"]")
+//                .isPublic(true)
+//                .build();
+//
+//        postRepository.save(post1);
+//        postRepository.save(post2);
+//
+//        postLikeRepository.save(PostLike.builder()
+//                .user(dummyUser)
+//                .post(post1)
+//                .build());
+//
+//        System.out.println("===== [더미] 유저 + 게시글 생성 완료 =====");
+//    }
 
     //가계부 (TravelPlan + Expense) 더미
     private void createExpenseDummies() {
