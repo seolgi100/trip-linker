@@ -10,6 +10,7 @@ import idusw.sbb.triplinker.global.common.ApiResponse;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.http.ResponseEntity;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -54,6 +55,7 @@ public class PlaceController {
     }
 
     // 특정 장소의 리뷰 목록 (별점 + 한줄평 + 후기 제목)
+    @Transactional(readOnly = true)
     @GetMapping("/{placeId}/reviews")
     public ResponseEntity<ApiResponse<List<PlaceReviewResponseDto>>> getReviewsByPlace(
             @PathVariable Long placeId
