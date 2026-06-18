@@ -3,6 +3,8 @@ package idusw.sbb.triplinker.domain.post.dto;
 import idusw.sbb.triplinker.domain.post.entity.Post;
 
 import java.time.LocalDateTime;
+import java.util.Arrays;
+import java.util.List;
 
 public record PostListResponseDto(
         Long postId,
@@ -12,7 +14,7 @@ public record PostListResponseDto(
         String title,
         String writerName,
         LocalDateTime createdAt,
-        String styleTags,
+        List<String> styleTags,
         int likes,
         int scraps,
         int views
@@ -32,7 +34,7 @@ public record PostListResponseDto(
                 post.getTitle(),
                 post.getUser() != null ? post.getUser().getName() : "사용자",
                 post.getCreatedAt(),
-                post.getStyleTags(),
+                parseStyleTags(post.getStyleTags()),
                 post.getLikeCount(),
                 scraps,
                 post.getViewCount()
@@ -72,5 +74,16 @@ public record PostListResponseDto(
             case "CAFE" -> "cat-cafe";
             default -> "cat-route";
         };
+    }
+
+    private static List<String> parseStyleTags(String styleTags) {
+        if (styleTags == null || styleTags.isBlank()) {
+            return List.of();
+        }
+
+        return Arrays.stream(styleTags.split(","))
+                .map(String::trim)
+                .filter(tag -> !tag.isBlank())
+                .toList();
     }
 }
