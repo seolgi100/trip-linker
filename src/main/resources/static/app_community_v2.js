@@ -466,16 +466,99 @@
 })();
 
 /* =============================================================================
- * community v2 - 게시글 작성 함수 보완
+ * community v2 - 현재 커뮤니티 카테고리 추적 + 게시글 작성 함수 보완
  * 목적:
- * - styleTags 배열 전송으로 인한 JSON parse error 해결
- * - 백엔드 PostWriteDto.styleTags(String)에 맞춰 문자열로 전송
- * - 기존 app_community.js 수정 없이 submitReview만 덮어쓰기
- * =============================================================================
- */
+ * - 숙소/맛집/관광지/카페 탭에서 작성한 글이 각각 STAY/FOOD/TOUR/CAFE로 저장되도록 처리
+ * - page_community.html의 setCommTab(this, 'stay') 구조에 맞춰 현재 탭 저장
+ * - PostWriteDto.styleTags(String)에 맞춰 태그를 문자열로 전송
+ * ============================================================================= */
 
 (function () {
     'use strict';
+
+    window._communityWriteCategory = window._communityWriteCategory || 'ROUTE';
+
+    const tabToCategory = {
+        route: 'ROUTE',
+        stay: 'STAY',
+        food: 'FOOD',
+        tour: 'TOUR',
+        cafe: 'CAFE'
+    };
+
+    const categoryToTab = {
+        ROUTE: 'route',
+        STAY: 'stay',
+        FOOD: 'food',
+        TOUR: 'tour',
+        CAFE: 'cafe'
+    };
+
+    function setWriteCategoryByTab(tab) {
+        const category = tabToCategory[tab] || 'ROUTE';
+
+        window._communityWriteCategory = category;
+
+        if (typeof _commState !== 'undefined') {
+            _commState.currentTab = categoryToTab[category] || 'route';
+        }
+
+        console.log('[community category selected]', {
+            tab: tab,
+            category: window._communityWriteCategory,
+            currentTab: typeof _commState !== 'undefined' ? _commState.currentTab : null
+        });
+    }
+
+    function getCategoryFromCurrentTabButton() {
+        const activeTab = document.querySelector('#commTabs .comm-tab.on');
+
+        if (!activeTab) {
+            return window._communityWriteCategory || 'ROUTE';
+        }
+
+        const text = activeTab.textContent.trim();
+
+        if (text.includes('숙소')) return 'STAY';
+        if (text.includes('맛집')) return 'FOOD';
+        if (text.includes('관광지')) return 'TOUR';
+        if (text.includes('카페')) return 'CAFE';
+        if (text.includes('여행 경로')) return 'ROUTE';
+
+        return window._communityWriteCategory || 'ROUTE';
+    }
+
+    function wrapSetCommTab() {
+        if (typeof window.setCommTab !== 'function') return;
+        if (window.setCommTab.__communityV2Wrapped) return;
+
+        const originalSetCommTab = window.setCommTab;
+
+        window.setCommTab = function (btn, cat) {
+            setWriteCategoryByTab(cat);
+            return originalSetCommTab.apply(this, arguments);
+        };
+
+        window.setCommTab.__communityV2Wrapped = true;
+    }
+
+    setTimeout(wrapSetCommTab, 300);
+    setTimeout(wrapSetCommTab, 800);
+    setTimeout(wrapSetCommTab, 1500);
+
+    document.addEventListener('click', function (e) {
+        const tabBtn = e.target.closest('#commTabs .comm-tab');
+
+        if (!tabBtn) return;
+
+        const text = tabBtn.textContent.trim();
+
+        if (text.includes('숙소')) setWriteCategoryByTab('stay');
+        else if (text.includes('맛집')) setWriteCategoryByTab('food');
+        else if (text.includes('관광지')) setWriteCategoryByTab('tour');
+        else if (text.includes('카페')) setWriteCategoryByTab('cafe');
+        else if (text.includes('여행 경로')) setWriteCategoryByTab('route');
+    }, true);
 
     window.submitReview = async function () {
 
@@ -503,15 +586,13 @@
         const publicEl = document.getElementById('writePublic');
 
         const title = titleEl ? titleEl.value.trim() : '';
+
         const content = editorEl
             ? (editorEl.innerText || editorEl.value || '').trim()
             : '';
 
-        const plainContent = content;
         const tagText = tagsEl ? tagsEl.value.trim() : '';
 
-        // PostWriteDto.styleTags는 String 타입
-        // 예: "테스트,커뮤니티"
         const styleTags = tagText
             .split(/[\s,]+/)
             .map(v => v.trim())
@@ -520,25 +601,22 @@
 
         const isPublic = publicEl ? !!publicEl.checked : true;
 
-        if (!title || !plainContent) {
+        if (!title || !content) {
             if (typeof toast === 'function') {
                 toast('제목과 내용을 입력해주세요.');
             }
             return;
         }
 
-        const currentTab =
-            typeof _commState !== 'undefined' && _commState.currentTab
-                ? _commState.currentTab
-                : 'route';
+        const categoryCode = getCategoryFromCurrentTabButton();
 
-        const categoryMap = {
-            route: 'ROUTE',
-            stay: 'STAY',
-            food: 'FOOD',
-            tour: 'TOUR',
-            cafe: 'CAFE'
-        };
+        window._communityWriteCategory = categoryCode;
+
+        console.log('[category debug]', {
+            currentTab: typeof _commState !== 'undefined' ? _commState.currentTab : null,
+            writeCategory: window._communityWriteCategory,
+            categoryCode: categoryCode
+        });
 
         const body = {
             planId: document.getElementById('writePlanId')?.value
@@ -547,13 +625,14 @@
             title: title,
             content: content,
             styleTags: styleTags,
-            category: categoryMap[currentTab] || 'ROUTE',
+            category: categoryCode,
             isPublic: isPublic
         };
 
+        console.log('[submitReview body]', body);
+
         const res = await api.post('/api/posts', body);
 
-        // PostController.createPost는 Long postId 반환
         const success =
             typeof res === 'number' ||
             res?.success === true ||
