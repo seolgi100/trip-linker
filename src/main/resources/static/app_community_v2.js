@@ -533,7 +533,7 @@
         const publicEl  = document.getElementById('writePublic');
 
         const title   = titleEl ? titleEl.value.trim() : '';
-        const content = editorEl ? (editorEl.innerText || editorEl.value || '').trim() : '';
+        const content = editorEl ? (editorEl.innerHTML || '').trim() : '';
         const tagText = tagsEl ? tagsEl.value.trim() : '';
 
         const styleTags = tagText.split(/[\s,]+/).map(v => v.trim()).filter(Boolean).join(',');
@@ -549,7 +549,7 @@
 
         // 이미지 업로드
         let imageUrls = [];
-        const selectedImages = window._communitySelectedImages || [];
+        const selectedImages = window._communityWriteImages || window._communitySelectedImages || [];
 
         if (selectedImages.length > 0) {
             const formData = new FormData();
@@ -758,16 +758,53 @@
     if (typeof prevCheckAndOpenWrite === 'function') {
         window.checkAndOpenWrite = function () {
             window._communitySelectedImages = [];
+            window._communityWriteImages    = [];
+            const preview = document.getElementById('writeImagePreview');
+            if (preview) preview.innerHTML = '';
             const result = prevCheckAndOpenWrite.apply(this, arguments);
             setTimeout(function () {
                 if (typeof window.injectWritePlanSelect === 'function') window.injectWritePlanSelect();
-                window.bindCommunityImageButton();
             }, 200);
             return result;
         };
     }
 
 })();
+
+/* =============================================================================
+ * community v2 — 후기 작성 이미지 핸들러
+ * ============================================================================= */
+window._communityWriteImages = window._communityWriteImages || [];
+
+window._handleWriteImageSelect = function(input) {
+    var files = Array.prototype.slice.call(input.files || []);
+    if (!files.length) return;
+    var preview = document.getElementById('writeImagePreview');
+    files.forEach(function(file) {
+        if (!file.type.startsWith('image/')) {
+            if (typeof toast === 'function') toast('이미지 파일만 추가할 수 있습니다.');
+            return;
+        }
+        var itemId = 'write-img-' + Date.now() + '-' + Math.random().toString(16).slice(2);
+        window._communityWriteImages.push({ id: itemId, file: file });
+        var reader = new FileReader();
+        reader.onload = function(ev) {
+            var card = document.createElement('div');
+            card.id = itemId;
+            card.style.cssText = 'border:1px solid var(--border);border-radius:12px;overflow:hidden;background:#fff';
+            card.innerHTML =
+                '<img src="' + ev.target.result + '" alt="새 이미지" style="width:100%;height:110px;object-fit:cover;display:block">' +
+                '<button type="button" style="width:100%;border:none;border-top:1px solid var(--border);background:#F8FAF9;color:var(--text2);padding:8px 0;font-size:12px;font-weight:800;cursor:pointer">추가 취소</button>';
+            card.querySelector('button').onclick = function() {
+                window._communityWriteImages = window._communityWriteImages.filter(function(img) { return img.id !== itemId; });
+                card.remove();
+            };
+            if (preview) preview.appendChild(card);
+        };
+        reader.readAsDataURL(file);
+    });
+    input.value = '';
+};
 
 
 /* =============================================================================
@@ -2085,14 +2122,8 @@
                     <input id="communityEditTitle" class="form-input" type="text" placeholder="제목을 입력하세요" style="width:100%">
                 </div>
                 <div class="form-group" style="margin-bottom:14px">
-                    <label class="form-label">카테고리</label>
-                    <select id="communityEditCategory" class="form-input" style="width:100%">
-                        <option value="ROUTE">여행 경로</option>
-                        <option value="STAY">숙소</option>
-                        <option value="FOOD">맛집</option>
-                        <option value="TOUR">관광지</option>
-                        <option value="CAFE">카페</option>
-                    </select>
+                    <label class="form-label">연동 여행 경로</label>
+                    <div id="communityEditPlanInfo" style="font-size:13px;color:var(--text2);padding:10px 12px;background:var(--cream);border:1px solid var(--border);border-radius:var(--r);min-height:36px">-</div>
                 </div>
                 <div class="form-group" style="margin-bottom:14px">
                     <label class="form-label">태그</label>
@@ -2101,6 +2132,10 @@
                 <div class="form-group" style="margin-bottom:14px">
                     <label class="form-label">내용</label>
                     <textarea id="communityEditContent" class="form-input" placeholder="내용을 입력하세요" style="width:100%;min-height:180px;resize:vertical;line-height:1.7"></textarea>
+                </div>
+                <div class="form-group" style="margin-bottom:14px" id="communityEditPlaceReviewsSection" style="display:none">
+                    <label class="form-label">📍 장소별 별점 &amp; 한줄평</label>
+                    <div id="communityEditPlaceReviewsBody" style="display:flex;flex-direction:column;gap:10px;margin-top:8px"></div>
                 </div>
                 <div class="form-group" style="margin-bottom:14px">
                     <label style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--text2);cursor:pointer">
@@ -2235,9 +2270,9 @@
         const postId   = document.getElementById('communityEditPostId')?.value;
         const title    = document.getElementById('communityEditTitle')?.value.trim();
         const content  = document.getElementById('communityEditContent')?.value.trim();
-        const category = document.getElementById('communityEditCategory')?.value || 'ROUTE';
         const tags     = document.getElementById('communityEditTags')?.value || '';
         const isPublic = !!document.getElementById('communityEditPublic')?.checked;
+        const category = window._communityEditOriginalPost?.category || 'ROUTE';
 
         if (!postId || !title || !content) {
             if (typeof toast === 'function') toast('제목과 내용을 입력해주세요.');
@@ -2258,6 +2293,32 @@
             await requestJson(`/api/posts/${postId}`, {
                 method: 'PATCH', headers: authHeaders(true), body: JSON.stringify(body)
             });
+
+            // 장소 리뷰 저장 — 기존 리뷰 업데이트 + 신규 리뷰 생성
+            const plrRows = document.querySelectorAll('#communityEditPlaceReviewsBody .plr-row');
+            if (plrRows.length) {
+                const toUpdate = [], toCreate = [];
+                plrRows.forEach(function(row) {
+                    const rating  = Number(row.querySelector('.star-sel')?.dataset.rating || 0);
+                    const comment = (row.querySelector('.one-line')?.value || '').trim() || null;
+                    if (!rating) return;
+                    if (row.dataset.reviewId) {
+                        toUpdate.push({ placeReviewId: Number(row.dataset.reviewId), rating, comment });
+                    } else {
+                        toCreate.push({ placeName: row.dataset.placeName || '', placeType: row.dataset.placeType || 'tour', rating, comment });
+                    }
+                });
+                if (toUpdate.length) {
+                    await requestJson('/api/posts/' + postId + '/place-reviews', {
+                        method: 'PATCH', headers: authHeaders(true), body: JSON.stringify({ reviews: toUpdate })
+                    });
+                }
+                if (toCreate.length) {
+                    await requestJson('/api/posts/' + postId + '/place-reviews', {
+                        method: 'POST', headers: authHeaders(true), body: JSON.stringify({ reviews: toCreate })
+                    });
+                }
+            }
 
             if (typeof toast === 'function') toast('후기가 수정되었습니다.');
             closeEditModal();
@@ -2301,9 +2362,16 @@
         document.getElementById('communityEditPostId').value  = post.postId;
         document.getElementById('communityEditTitle').value   = post.title || '';
         document.getElementById('communityEditContent').value = post.content || '';
-        document.getElementById('communityEditCategory').value = post.category || 'ROUTE';
         document.getElementById('communityEditTags').value    = styleTagsToInput(post.styleTags);
         document.getElementById('communityEditPublic').checked = post.isPublic !== false;
+
+        // 플랜 정보 표시
+        const planInfoEl = document.getElementById('communityEditPlanInfo');
+        if (planInfoEl) {
+            planInfoEl.textContent = post.planTitle
+                ? ('📍 ' + post.planTitle + (post.planDestination ? ' · ' + post.planDestination : ''))
+                : '연동된 여행 경로 없음';
+        }
 
         renderEditImages(post.postId, post.imageUrls || []);
         editSelectedImages = [];
@@ -2312,6 +2380,73 @@
         if (preview) preview.innerHTML = '';
         const imageInput = document.getElementById('communityEditImageInput');
         if (imageInput) imageInput.value = '';
+
+        // 장소 리뷰 로드 (planRouteJson 파싱 + 기존 리뷰 매핑)
+        const plrSection = document.getElementById('communityEditPlaceReviewsSection');
+        const plrBody    = document.getElementById('communityEditPlaceReviewsBody');
+        if (plrSection && plrBody) {
+            plrSection.style.display = 'none';
+            plrBody.innerHTML = '';
+            try {
+                // planRouteJson에서 장소 목록 추출
+                var routeRaw = post.planRouteJson;
+                var days = [];
+                try { days = routeRaw ? (typeof routeRaw === 'string' ? JSON.parse(routeRaw) : routeRaw) : []; } catch(_) {}
+                var TYPE_ICON_MAP = { stay: '🏨', food: '🍽️', cafe: '☕', tour: '🎡', attraction: '🎡' };
+                var TYPE_CSS_MAP  = { stay: 'pr-stay', food: 'pr-food', cafe: 'pr-cafe', tour: 'pr-tour', attraction: 'pr-tour' };
+                var planPlaces = [];
+                (Array.isArray(days) ? days : []).forEach(function(day) {
+                    (day.places || []).forEach(function(p) { if (p.name) planPlaces.push(p); });
+                });
+
+                // 기존 장소 리뷰 조회
+                var existingReviews = [];
+                try {
+                    var plrRes = await requestJson('/api/posts/' + post.postId + '/place-reviews', { method: 'GET', headers: authHeaders(false) });
+                    existingReviews = Array.isArray(plrRes?.data) ? plrRes.data : Array.isArray(plrRes) ? plrRes : [];
+                } catch(_) {}
+
+                // placeName 기준으로 기존 리뷰 맵 생성
+                var reviewMap = {};
+                existingReviews.forEach(function(r) { reviewMap[r.placeName] = r; });
+
+                if (planPlaces.length) {
+                    plrSection.style.display = 'block';
+                    plrBody.innerHTML = planPlaces.map(function(p) {
+                        var type    = (p.type || 'tour').toLowerCase();
+                        var icon    = TYPE_ICON_MAP[type] || '📍';
+                        var css     = TYPE_CSS_MAP[type]  || 'pr-tour';
+                        var existing = reviewMap[p.name];
+                        var rating  = existing ? (existing.rating || 0) : 0;
+                        var comment = existing ? (existing.comment || '') : '';
+                        var reviewId = existing ? existing.id : '';
+                        var stars = [1,2,3,4,5].map(function(n) {
+                            return '<button class="star-btn' + (n <= rating ? ' lit' : '') + '" onclick="setStars(this,' + n + ')">★</button>';
+                        }).join('');
+                        return '<div class="plr-row" data-place-name="' + escapeHtml(p.name) + '" data-place-type="' + type + '"' + (reviewId ? ' data-review-id="' + reviewId + '"' : '') + '>' +
+                            '<div class="plr-icon ' + css + '">' + icon + '</div>' +
+                            '<div class="plr-name">' + escapeHtml(p.name) + '</div>' +
+                            '<div class="star-sel" data-rating="' + rating + '">' + stars + '</div>' +
+                            '<input class="one-line" placeholder="한줄평 (선택)" maxlength="200" value="' + escapeHtml(comment) + '">' +
+                        '</div>';
+                    }).join('');
+                } else if (existingReviews.length) {
+                    // planRouteJson 없어도 기존 리뷰는 표시
+                    plrSection.style.display = 'block';
+                    plrBody.innerHTML = existingReviews.map(function(r) {
+                        var stars = [1,2,3,4,5].map(function(n) {
+                            return '<button class="star-btn' + (n <= (r.rating||0) ? ' lit' : '') + '" onclick="setStars(this,' + n + ')">★</button>';
+                        }).join('');
+                        return '<div class="plr-row" data-place-name="' + escapeHtml(r.placeName||'') + '" data-place-type="' + (r.category||'tour').toLowerCase() + '" data-review-id="' + r.id + '">' +
+                            '<div class="plr-icon pr-tour">📍</div>' +
+                            '<div class="plr-name">' + escapeHtml(r.placeName||'') + '</div>' +
+                            '<div class="star-sel" data-rating="' + (r.rating||0) + '">' + stars + '</div>' +
+                            '<input class="one-line" placeholder="한줄평 (선택)" maxlength="200" value="' + escapeHtml(r.comment||'') + '">' +
+                        '</div>';
+                    }).join('');
+                }
+            } catch(e) { console.error('[edit] 장소 리뷰 로드 실패', e); }
+        }
 
         overlay.style.display = 'flex';
     };
