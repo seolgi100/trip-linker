@@ -3308,3 +3308,433 @@
         setTimeout(applyActionState, 100);
     };
 })();
+
+/* =============================================================================
+ * community v2 - 마이페이지 후기 수정 모달 + 이미지 삭제
+ * 목적:
+ * - 기존 prompt 수정 방식 제거
+ * - 제목/내용/태그/공개여부 수정
+ * - 기존 이미지 삭제 가능
+ * - app_main.js 수정 없이 app_community_v2.js에서 editMyPost 덮어쓰기
+ * ============================================================================= */
+(function () {
+    'use strict';
+
+    function getAccessToken() {
+        if (typeof Token !== 'undefined' && Token.getAccess) {
+            return Token.getAccess();
+        }
+
+        return localStorage.getItem('accessToken')
+            || localStorage.getItem('access_token')
+            || localStorage.getItem('token')
+            || sessionStorage.getItem('accessToken')
+            || sessionStorage.getItem('access_token')
+            || sessionStorage.getItem('token');
+    }
+
+    function authHeaders(json) {
+        const token = getAccessToken();
+        const headers = {};
+
+        if (json) {
+            headers['Content-Type'] = 'application/json';
+        }
+
+        if (token) {
+            headers['Authorization'] = 'Bearer ' + token;
+        }
+
+        return headers;
+    }
+
+    async function requestJson(url, options) {
+        const response = await fetch(url, options);
+
+        let data = null;
+
+        try {
+            data = await response.json();
+        } catch (e) {
+            data = null;
+        }
+
+        if (!response.ok) {
+            throw new Error(data?.message || '요청 처리에 실패했습니다.');
+        }
+
+        return data;
+    }
+
+    function escapeHtml(value) {
+        return String(value ?? '')
+            .replaceAll('&', '&amp;')
+            .replaceAll('<', '&lt;')
+            .replaceAll('>', '&gt;')
+            .replaceAll('"', '&quot;')
+            .replaceAll("'", '&#039;');
+    }
+
+    function styleTagsToInput(styleTags) {
+        if (!styleTags) return '';
+
+        if (Array.isArray(styleTags)) {
+            return styleTags.join(', ');
+        }
+
+        try {
+            const parsed = JSON.parse(styleTags);
+            if (Array.isArray(parsed)) {
+                return parsed.join(', ');
+            }
+        } catch (e) {
+            // JSON이 아니면 문자열 그대로 사용
+        }
+
+        return String(styleTags);
+    }
+
+    function inputToStyleTags(value) {
+        return String(value || '')
+            .split(/[\s,]+/)
+            .map(v => v.trim())
+            .filter(Boolean)
+            .join(',');
+    }
+
+    function ensureEditModal() {
+        let overlay = document.getElementById('communityEditPostOverlay');
+
+        if (overlay) return overlay;
+
+        overlay = document.createElement('div');
+        overlay.id = 'communityEditPostOverlay';
+        overlay.style.cssText = `
+            display:none;
+            position:fixed;
+            inset:0;
+            z-index:9999;
+            background:rgba(0,0,0,.45);
+            align-items:center;
+            justify-content:center;
+            padding:20px;
+            box-sizing:border-box;
+        `;
+
+        overlay.innerHTML = `
+            <div style="
+                width:720px;
+                max-width:100%;
+                max-height:90vh;
+                overflow:auto;
+                background:#fff;
+                border-radius:22px;
+                padding:26px;
+                box-sizing:border-box;
+                box-shadow:0 18px 50px rgba(0,0,0,.25);
+            ">
+                <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:18px">
+                    <h2 style="margin:0;font-size:20px;font-weight:800;color:var(--text1)">후기 수정</h2>
+                    <button type="button"
+                            id="communityEditCloseBtn"
+                            style="border:none;background:transparent;font-size:28px;cursor:pointer;color:var(--text3)">×</button>
+                </div>
+
+                <input type="hidden" id="communityEditPostId">
+
+                <div class="form-group" style="margin-bottom:14px">
+                    <label class="form-label">제목</label>
+                    <input id="communityEditTitle"
+                           class="form-input"
+                           type="text"
+                           placeholder="제목을 입력하세요"
+                           style="width:100%">
+                </div>
+
+                <div class="form-group" style="margin-bottom:14px">
+                    <label class="form-label">카테고리</label>
+                    <select id="communityEditCategory"
+                            class="form-input"
+                            style="width:100%">
+                        <option value="ROUTE">여행 경로</option>
+                        <option value="STAY">숙소</option>
+                        <option value="FOOD">맛집</option>
+                        <option value="TOUR">관광지</option>
+                        <option value="CAFE">카페</option>
+                    </select>
+                </div>
+
+                <div class="form-group" style="margin-bottom:14px">
+                    <label class="form-label">태그</label>
+                    <input id="communityEditTags"
+                           class="form-input"
+                           type="text"
+                           placeholder="예: 힐링, 제주, 맛집"
+                           style="width:100%">
+                </div>
+
+                <div class="form-group" style="margin-bottom:14px">
+                    <label class="form-label">내용</label>
+                    <textarea id="communityEditContent"
+                              class="form-input"
+                              placeholder="내용을 입력하세요"
+                              style="width:100%;min-height:180px;resize:vertical;line-height:1.7"></textarea>
+                </div>
+
+                <div class="form-group" style="margin-bottom:14px">
+                    <label style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--text2);cursor:pointer">
+                        <input id="communityEditPublic" type="checkbox">
+                        공개글로 설정
+                    </label>
+                </div>
+
+                <div class="form-group" style="margin-bottom:18px">
+                    <label class="form-label">첨부 이미지</label>
+                    <div id="communityEditImages"
+                         style="display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:10px"></div>
+                    <p id="communityEditImageEmpty"
+                       style="display:none;color:var(--text3);font-size:13px;margin:8px 0 0">
+                        첨부된 이미지가 없습니다.
+                    </p>
+                </div>
+
+                <div style="display:flex;gap:8px;justify-content:flex-end">
+                    <button type="button"
+                            id="communityEditCancelBtn"
+                            class="btn-prev-step"
+                            style="padding:11px 18px;border-radius:var(--r)">
+                        취소
+                    </button>
+                    <button type="button"
+                            id="communityEditSubmitBtn"
+                            class="btn-f"
+                            style="padding:11px 22px;border-radius:var(--r)">
+                        수정 완료
+                    </button>
+                </div>
+            </div>
+        `;
+
+        document.body.appendChild(overlay);
+
+        overlay.addEventListener('click', function (e) {
+            if (e.target === overlay) {
+                closeEditModal();
+            }
+        });
+
+        document.getElementById('communityEditCloseBtn').onclick = closeEditModal;
+        document.getElementById('communityEditCancelBtn').onclick = closeEditModal;
+        document.getElementById('communityEditSubmitBtn').onclick = submitEditPost;
+
+        return overlay;
+    }
+
+    function closeEditModal() {
+        const overlay = document.getElementById('communityEditPostOverlay');
+        if (overlay) overlay.style.display = 'none';
+    }
+
+    function renderEditImages(postId, imageUrls) {
+        const box = document.getElementById('communityEditImages');
+        const empty = document.getElementById('communityEditImageEmpty');
+
+        if (!box || !empty) return;
+
+        const urls = Array.isArray(imageUrls) ? imageUrls : [];
+
+        if (!urls.length) {
+            box.innerHTML = '';
+            empty.style.display = 'block';
+            return;
+        }
+
+        empty.style.display = 'none';
+
+        box.innerHTML = urls.map(url => `
+            <div class="community-edit-image-item"
+                 data-image-url="${escapeHtml(url)}"
+                 style="position:relative;border:1px solid var(--border);border-radius:12px;overflow:hidden;background:#fff">
+                <img src="${escapeHtml(url)}"
+                     alt="첨부 이미지"
+                     style="width:100%;height:110px;object-fit:cover;display:block"
+                     onerror="this.style.display='none'">
+                <button type="button"
+                        class="community-edit-image-delete"
+                        data-post-id="${escapeHtml(postId)}"
+                        data-image-url="${escapeHtml(url)}"
+                        style="
+                            width:100%;
+                            border:none;
+                            border-top:1px solid var(--border);
+                            background:#FEF3F2;
+                            color:var(--coral);
+                            padding:8px 0;
+                            font-size:12px;
+                            font-weight:800;
+                            cursor:pointer;
+                        ">
+                    이미지 삭제
+                </button>
+            </div>
+        `).join('');
+
+        box.querySelectorAll('.community-edit-image-delete').forEach(btn => {
+            btn.onclick = async function () {
+                const targetPostId = this.getAttribute('data-post-id');
+                const imageUrl = this.getAttribute('data-image-url');
+
+                if (!targetPostId || !imageUrl) {
+                    if (typeof toast === 'function') toast('이미지 정보를 찾을 수 없습니다.');
+                    return;
+                }
+
+                if (!confirm('이 이미지를 삭제하시겠습니까? 삭제하면 복구할 수 없습니다.')) {
+                    return;
+                }
+
+                try {
+                    await requestJson(
+                        '/api/posts/' + targetPostId + '/images?imageUrl=' + encodeURIComponent(imageUrl),
+                        {
+                            method: 'DELETE',
+                            headers: authHeaders(false)
+                        }
+                    );
+
+                    const item = this.closest('.community-edit-image-item');
+                    if (item) item.remove();
+
+                    if (!box.querySelector('.community-edit-image-item')) {
+                        empty.style.display = 'block';
+                    }
+
+                    if (typeof toast === 'function') toast('이미지가 삭제되었습니다.');
+                } catch (e) {
+                    if (typeof toast === 'function') toast(e.message || '이미지 삭제에 실패했습니다.');
+                }
+            };
+        });
+    }
+
+    async function submitEditPost() {
+        const postId = document.getElementById('communityEditPostId')?.value;
+        const title = document.getElementById('communityEditTitle')?.value.trim();
+        const content = document.getElementById('communityEditContent')?.value.trim();
+        const category = document.getElementById('communityEditCategory')?.value || 'ROUTE';
+        const tags = document.getElementById('communityEditTags')?.value || '';
+        const isPublic = !!document.getElementById('communityEditPublic')?.checked;
+
+        if (!postId) {
+            if (typeof toast === 'function') toast('게시글 정보를 찾을 수 없습니다.');
+            return;
+        }
+
+        if (!title || !content) {
+            if (typeof toast === 'function') toast('제목과 내용을 입력해주세요.');
+            return;
+        }
+
+        const body = {
+            title: title,
+            content: content,
+            styleTags: inputToStyleTags(tags),
+            category: category,
+            isPublic: isPublic,
+            planId: window._communityEditOriginalPost?.planId || null
+        };
+
+        try {
+            await requestJson('/api/posts/' + postId, {
+                method: 'PATCH',
+                headers: authHeaders(true),
+                body: JSON.stringify(body)
+            });
+
+            if (typeof toast === 'function') toast('후기가 수정되었습니다.');
+
+            closeEditModal();
+
+            if (typeof window._renderMyReviews === 'function') {
+                await window._renderMyReviews();
+            }
+
+            if (typeof window.loadCommunityPosts === 'function') {
+                await window.loadCommunityPosts(0, true);
+            }
+
+            if (
+                (window._currentPostId && String(window._currentPostId) === String(postId)) ||
+                (window._openedPostId && String(window._openedPostId) === String(postId))
+            ) {
+                if (typeof window.openPostDetail === 'function') {
+                    await window.openPostDetail(postId);
+                }
+            }
+        } catch (e) {
+            if (typeof toast === 'function') toast(e.message || '수정에 실패했습니다.');
+        }
+    }
+
+    window.editMyPost = async function (postId) {
+        if (!postId) {
+            if (typeof toast === 'function') toast('게시글 정보를 찾을 수 없습니다.');
+            return;
+        }
+
+        if (typeof Token !== 'undefined' && Token.getAccess && !Token.getAccess()) {
+            if (typeof toast === 'function') toast('로그인이 필요합니다.');
+            if (typeof go === 'function') go('login');
+            return;
+        }
+
+        let postRes;
+
+        try {
+            postRes = await requestJson('/api/posts/' + postId, {
+                method: 'GET',
+                headers: authHeaders(false)
+            });
+        } catch (e) {
+            if (typeof toast === 'function') toast(e.message || '게시글 정보를 불러오지 못했습니다.');
+            return;
+        }
+
+        const post = postRes?.data || postRes;
+
+        if (!post || !post.postId) {
+            if (typeof toast === 'function') toast('게시글 정보를 찾을 수 없습니다.');
+            return;
+        }
+
+        /*
+         * 프론트에서도 1차 방어.
+         * 최종 권한 검사는 백엔드 PostService.updatePost/deletePostImage에서 다시 수행됨.
+         */
+        if (
+            typeof _currentUser !== 'undefined' &&
+            _currentUser &&
+            _currentUser.userId &&
+            post.userId &&
+            Number(_currentUser.userId) !== Number(post.userId)
+        ) {
+            if (typeof toast === 'function') toast('본인이 작성한 글만 수정할 수 있습니다.');
+            return;
+        }
+
+        const overlay = ensureEditModal();
+
+        window._communityEditOriginalPost = post;
+
+        document.getElementById('communityEditPostId').value = post.postId;
+        document.getElementById('communityEditTitle').value = post.title || '';
+        document.getElementById('communityEditContent').value = post.content || '';
+        document.getElementById('communityEditCategory').value = post.category || 'ROUTE';
+        document.getElementById('communityEditTags').value = styleTagsToInput(post.styleTags);
+        document.getElementById('communityEditPublic').checked = post.isPublic !== false;
+
+        renderEditImages(post.postId, post.imageUrls || []);
+
+        overlay.style.display = 'flex';
+    };
+})();

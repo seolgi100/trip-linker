@@ -22,8 +22,6 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 
-import java.util.List;
-
 @RestController
 @RequestMapping("/api/posts")
 @RequiredArgsConstructor
@@ -198,5 +196,19 @@ public class PostController {
         ReportRequestDto reportDto = new ReportRequestDto(postId, dto.getReason());
         Long reportId = systemService.reportPost(userDetails.getUserId(), reportDto);
         return ResponseEntity.ok(reportId);
+    }
+
+    // 커뮤니티 - 게시글 이미지 삭제
+    @DeleteMapping("/{postId}/images")
+    public ResponseEntity<ApiResponse<Void>> deletePostImage(
+            @AuthenticationPrincipal CustomUserDetails userDetails,
+            @PathVariable Long postId,
+            @RequestParam String imageUrl
+    ) {
+        postService.deletePostImage(userDetails.getUserId(), postId, imageUrl);
+
+        return ResponseEntity.ok(
+                ApiResponse.success("게시글 이미지 삭제 성공", null)
+        );
     }
 }
