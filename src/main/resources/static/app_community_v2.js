@@ -1924,6 +1924,30 @@
 
         if (!post) return;
 
+        const category = String(post.category || 'ROUTE').toUpperCase();
+
+        if (category !== 'ROUTE') {
+            const detailTags = document.getElementById('pr-detail-tags');
+            if (detailTags) detailTags.remove();
+
+            const placeList = document.getElementById('pr-place-list');
+            if (placeList) {
+                placeList.style.display = 'none';
+                placeList.innerHTML = '';
+            }
+
+            const planBadge = document.getElementById('pr-plan-badge');
+            if (planBadge) {
+                planBadge.style.display = 'none';
+                planBadge.innerHTML = '';
+            }
+
+            renderDetailCategory(post);
+            renderDetailMeta(post);
+
+            return;
+        }
+
         const routeData = await getRouteData(post);
 
         removeBodyInlineTags();
@@ -2152,8 +2176,14 @@
     };
 
     window.loadCommunitySidePanels = async function () {
+        if (window._communitySidePanelsLoading) return;
+
         const tagBox = document.getElementById('popular-tags-list');
         const recoBox = document.getElementById('ai-reco-list');
+
+        if (!tagBox && !recoBox) return;
+
+        window._communitySidePanelsLoading = true;
 
         if (!tagBox && !recoBox) return;
 
@@ -2167,28 +2197,28 @@
 
             if (tagBox) {
                 tagBox.innerHTML = `
-                    <div style="font-size:12px;color:var(--text3);grid-column:1 / -1">
-                        인기 태그를 불러오지 못했습니다.
-                    </div>
-                `;
+            <div style="font-size:12px;color:var(--text3);grid-column:1 / -1">
+                인기 태그를 불러오지 못했습니다.
+            </div>
+        `;
             }
 
             if (recoBox) {
                 recoBox.innerHTML = `
-                    <div style="font-size:12px;color:var(--text3)">
-                        추천 정보를 불러오지 못했습니다.
-                    </div>
-                `;
+            <div style="font-size:12px;color:var(--text3)">
+                추천 정보를 불러오지 못했습니다.
+            </div>
+        `;
             }
+        } finally {
+            window._communitySidePanelsLoading = false;
         }
     };
 
-    /*
-     * 페이지 최초 진입 시에도 한 번 렌더링
-     */
-    setTimeout(function () {
-        window.loadCommunitySidePanels();
-    }, 300);
+
+    // setTimeout(function () {
+    //     window.loadCommunitySidePanels();
+    // }, 300);
 })();
 
 /* =============================================================================
@@ -2316,6 +2346,14 @@
     window.loadCommunityPosts = async function (page = 0, reset = true) {
         const tab = getCurrentTabKey();
 
+        const requestKey = `${tab}:${page}:${reset}`;
+
+        if (window._communityPostsLoadingKey === requestKey) {
+            return;
+        }
+
+        window._communityPostsLoadingKey = requestKey;
+
         removeCommunityV2Pager();
 
         if (typeof _commState !== 'undefined') {
@@ -2334,14 +2372,11 @@
         }
 
         try {
-            const res = await api.get(
-                `/api/posts?page=${page}&size=10&sort=scrap&category=${tab}`
-            );
-
+            const res = await api.get(`/api/posts?page=${page}&size=10&sort=scrap&category=${tab}`);
             const pageData = extractPage(res);
 
             if (typeof window._renderPostList === 'function') {
-                window._renderPostList(pageData.content, true);
+                window._renderPostList(pageData.content, reset);
             }
 
             renderCommunityV2Pager(tab, pageData.number, pageData.totalPages);
@@ -2354,13 +2389,13 @@
 
             if (tabEl) {
                 tabEl.innerHTML = `
-                    <div style="padding:40px 20px;text-align:center;color:var(--coral);font-size:14px">
-                        게시글을 불러오지 못했습니다.
-                    </div>
-                `;
+            <div style="padding:40px 20px;text-align:center;color:var(--coral);font-size:14px">
+                게시글을 불러오지 못했습니다.
+            </div>
+        `;
             }
-
-            removeCommunityV2Pager();
+        } finally {
+            window._communityPostsLoadingKey = null;
         }
     };
 
