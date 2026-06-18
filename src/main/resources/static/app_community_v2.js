@@ -3320,6 +3320,8 @@
 (function () {
     'use strict';
 
+    let editSelectedImages = [];
+
     function getAccessToken() {
         if (typeof Token !== 'undefined' && Token.getAccess) {
             return Token.getAccess();
@@ -3496,6 +3498,25 @@
                        style="display:none;color:var(--text3);font-size:13px;margin:8px 0 0">
                         첨부된 이미지가 없습니다.
                     </p>
+                    
+                    <div style="margin-top:10px">
+                        <button type="button"
+                                id="communityEditAddImageBtn"
+                                class="btn-prev-step"
+                                style="padding:9px 14px;border-radius:10px;font-size:13px">
+                            새 이미지 추가
+                        </button>
+                    
+                        <input id="communityEditImageInput"
+                               type="file"
+                               accept="image/*"
+                               multiple
+                               style="display:none">
+                    </div>
+                    
+                    <div id="communityEditNewImagePreview"
+                         style="display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:10px;margin-top:10px"></div>
+                    
                 </div>
 
                 <div style="display:flex;gap:8px;justify-content:flex-end">
@@ -3526,6 +3547,8 @@
         document.getElementById('communityEditCloseBtn').onclick = closeEditModal;
         document.getElementById('communityEditCancelBtn').onclick = closeEditModal;
         document.getElementById('communityEditSubmitBtn').onclick = submitEditPost;
+
+        bindEditImageInput();
 
         return overlay;
     }
@@ -3617,6 +3640,110 @@
         });
     }
 
+    function bindEditImageInput() {
+        const btn = document.getElementById('communityEditAddImageBtn');
+        const input = document.getElementById('communityEditImageInput');
+
+        if (!btn || !input) return;
+
+        btn.onclick = function () {
+            input.click();
+        };
+
+        input.onchange = handleEditImageSelect;
+    }
+
+    function handleEditImageSelect(e) {
+        const files = [...(e.target.files || [])];
+
+        if (!files.length) return;
+
+        const preview = document.getElementById('communityEditNewImagePreview');
+        if (!preview) return;
+
+        files.forEach(file => {
+            if (!file.type.startsWith('image/')) {
+                if (typeof toast === 'function') toast('이미지 파일만 추가할 수 있습니다.');
+                return;
+            }
+
+            const itemId = 'edit-img-' + Date.now() + '-' + Math.random().toString(16).slice(2);
+
+            editSelectedImages.push({
+                id: itemId,
+                file: file
+            });
+
+            const reader = new FileReader();
+
+            reader.onload = function (event) {
+                const card = document.createElement('div');
+                card.id = itemId;
+                card.style.cssText = `
+                border:1px solid var(--border);
+                border-radius:12px;
+                overflow:hidden;
+                background:#fff;
+            `;
+
+                card.innerHTML = `
+                <img src="${event.target.result}"
+                     alt="새 이미지"
+                     style="width:100%;height:110px;object-fit:cover;display:block">
+                <button type="button"
+                        style="
+                            width:100%;
+                            border:none;
+                            border-top:1px solid var(--border);
+                            background:#F8FAF9;
+                            color:var(--text2);
+                            padding:8px 0;
+                            font-size:12px;
+                            font-weight:800;
+                            cursor:pointer;
+                        ">
+                    추가 취소
+                </button>
+            `;
+
+                card.querySelector('button').onclick = function () {
+                    editSelectedImages = editSelectedImages.filter(img => img.id !== itemId);
+                    card.remove();
+                };
+
+                preview.appendChild(card);
+            };
+
+            reader.readAsDataURL(file);
+        });
+
+        e.target.value = '';
+    }
+
+    async function uploadEditImages() {
+        if (!editSelectedImages.length) return [];
+
+        const formData = new FormData();
+
+        editSelectedImages.forEach(item => {
+            formData.append('files', item.file);
+        });
+
+        const token = getAccessToken();
+
+        const uploadRes = await fetch('/api/posts/images', {
+            method: 'POST',
+            headers: token ? { Authorization: 'Bearer ' + token } : {},
+            body: formData
+        });
+
+        if (!uploadRes.ok) {
+            throw new Error('이미지 업로드에 실패했습니다.');
+        }
+
+        return await uploadRes.json();
+    }
+
     async function submitEditPost() {
         const postId = document.getElementById('communityEditPostId')?.value;
         const title = document.getElementById('communityEditTitle')?.value.trim();
@@ -3635,13 +3762,23 @@
             return;
         }
 
+        let uploadedImageUrls = [];
+
+        try {
+            uploadedImageUrls = await uploadEditImages();
+        } catch (e) {
+            if (typeof toast === 'function') toast(e.message || '이미지 업로드에 실패했습니다.');
+            return;
+        }
+
         const body = {
             title: title,
             content: content,
             styleTags: inputToStyleTags(tags),
             category: category,
             isPublic: isPublic,
-            planId: window._communityEditOriginalPost?.planId || null
+            planId: window._communityEditOriginalPost?.planId || null,
+            imageUrls: uploadedImageUrls
         };
 
         try {
@@ -3734,6 +3871,14 @@
         document.getElementById('communityEditPublic').checked = post.isPublic !== false;
 
         renderEditImages(post.postId, post.imageUrls || []);
+
+        editSelectedImages = [];
+
+        const preview = document.getElementById('communityEditNewImagePreview');
+        if (preview) preview.innerHTML = '';
+
+        const imageInput = document.getElementById('communityEditImageInput');
+        if (imageInput) imageInput.value = '';
 
         overlay.style.display = 'flex';
     };
