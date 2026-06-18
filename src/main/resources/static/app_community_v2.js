@@ -1222,8 +1222,13 @@
         const goBtn = document.getElementById('cpp-go-planner-btn');
         if (goBtn) {
             goBtn.onclick = function () {
+                if (typeof window.addCurrentPreviewPlanToMyTrips === 'function') {
+                    window.addCurrentPreviewPlanToMyTrips();
+                    return;
+                }
+
                 closeCommunityPlanPreview();
-                if (typeof go === 'function') go('planner');
+                if (typeof go === 'function') go('map');
             };
         }
 
@@ -3661,6 +3666,9 @@
     }
 
     async function uploadEditImages() {
+        editSelectedImages = (editSelectedImages || [])
+            .filter(item => item && item.file instanceof File);
+
         if (!editSelectedImages.length) return [];
 
         const formData = new FormData();
@@ -3678,6 +3686,13 @@
         });
 
         if (!uploadRes.ok) {
+            const errText = await uploadRes.text();
+            console.error('[community-v2] 수정 이미지 업로드 실패:', uploadRes.status, errText);
+
+            if (uploadRes.status === 413) {
+                throw new Error('이미지 용량이 너무 큽니다. 더 작은 이미지로 다시 시도해주세요.');
+            }
+
             throw new Error('이미지 업로드에 실패했습니다.');
         }
 
@@ -3978,6 +3993,9 @@
     }
 
     async function uploadDetailEditImages() {
+        detailEditSelectedImages = (detailEditSelectedImages || [])
+            .filter(item => item && item.file instanceof File);
+
         if (!detailEditSelectedImages.length) return [];
 
         const formData = new FormData();
@@ -3995,6 +4013,13 @@
         });
 
         if (!uploadRes.ok) {
+            const errText = await uploadRes.text();
+            console.error('[community-v2] 상세 수정 이미지 업로드 실패:', uploadRes.status, errText);
+
+            if (uploadRes.status === 413) {
+                throw new Error('이미지 용량이 너무 큽니다. 더 작은 이미지로 다시 시도해주세요.');
+            }
+
             throw new Error('이미지 업로드에 실패했습니다.');
         }
 
@@ -4412,4 +4437,716 @@
     }
 
     window.startDetailEditMode = startDetailEditMode;
+})();
+
+/* =============================================================================
+ * community v2 - 상세 CTA 실제 플랜 미리보기 연결
+ * 목적:
+ * - 여행 경로 후기의 CTA 클릭 시 실제 planId 기반 플랜 미리보기 열기
+ * - 더미데이터 사용 금지
+ * ============================================================================= */
+(function () {
+    'use strict';
+
+    function bindReviewCtaToActualPlan() {
+        const post = window._currentPostDetail;
+        const cta = document.querySelector('#page-review .review-cta');
+        const title = document.getElementById('pr-cta-ttl');
+        const sub = document.getElementById('pr-cta-sub');
+
+        if (!cta || !post) return;
+
+        const category = String(post.category || 'ROUTE').toUpperCase();
+
+        if (category !== 'ROUTE' || !post.planId) {
+            cta.style.display = 'none';
+            cta.onclick = null;
+            cta.style.cursor = '';
+            return;
+        }
+
+        cta.style.display = '';
+        cta.style.cursor = 'pointer';
+
+        if (title) {
+            title.textContent = '✈️ 이 경로가 마음에 드셨나요?';
+        }
+
+        if (sub) {
+            sub.textContent = '클릭하면 이 후기에 연결된 실제 여행 계획을 볼 수 있습니다.';
+        }
+
+        cta.onclick = async function () {
+            if (typeof window.openCommunityPlanPreview === 'function') {
+                await window.openCommunityPlanPreview();
+            } else if (typeof toast === 'function') {
+                toast('플랜 미리보기 기능을 불러오지 못했습니다.');
+            }
+        };
+    }
+
+    const prevOpenPostDetailForCtaPlan = window.openPostDetail;
+
+    if (typeof prevOpenPostDetailForCtaPlan === 'function' && !prevOpenPostDetailForCtaPlan.__ctaActualPlanWrapped) {
+        window.openPostDetail = async function (postId) {
+            const result = await prevOpenPostDetailForCtaPlan.apply(this, arguments);
+
+            setTimeout(bindReviewCtaToActualPlan, 100);
+            setTimeout(bindReviewCtaToActualPlan, 300);
+
+            return result;
+        };
+
+        window.openPostDetail.__ctaActualPlanWrapped = true;
+    }
+
+    window.bindReviewCtaToActualPlan = bindReviewCtaToActualPlan;
+})();
+
+/* =============================================================================
+ * community v2 - CTA 버튼 / 플랜 이동 / 스크랩한 커뮤니티 목록 최종 연결
+ * 전제:
+ * - page_mypage.html에 my-scrap-community 버튼과 섹션이 직접 추가되어 있음
+ * ============================================================================= */
+(function () {
+    'use strict';
+
+    function esc(value) {
+        return String(value ?? '')
+            .replaceAll('&', '&amp;')
+            .replaceAll('<', '&lt;')
+            .replaceAll('>', '&gt;')
+            .replaceAll('"', '&quot;')
+            .replaceAll("'", '&#039;');
+    }
+
+    function getAccessToken() {
+        if (typeof Token !== 'undefined' && Token.getAccess) {
+            return Token.getAccess();
+        }
+
+        return localStorage.getItem('accessToken')
+            || localStorage.getItem('access_token')
+            || localStorage.getItem('token')
+            || sessionStorage.getItem('accessToken')
+            || sessionStorage.getItem('access_token')
+            || sessionStorage.getItem('token');
+    }
+
+    function requireLogin() {
+        if (!getAccessToken()) {
+            if (typeof toast === 'function') toast('로그인이 필요합니다.');
+            if (typeof go === 'function') go('login');
+            return false;
+        }
+        return true;
+    }
+
+    function extractArray(res) {
+        if (Array.isArray(res)) return res;
+        if (Array.isArray(res?.data)) return res.data;
+        if (Array.isArray(res?.data?.content)) return res.data.content;
+        if (Array.isArray(res?.content)) return res.content;
+        return [];
+    }
+
+    function getCurrentPostForAction() {
+        return window._currentPostDetail || null;
+    }
+
+    function getCurrentPostCategory(post) {
+        return String(post?.category || window._currentPostCategory || 'ROUTE').toUpperCase();
+    }
+
+    /*
+     * 미리보기 모달 - 스크랩 버튼
+     */
+    window.scrapCurrentPreviewPlan = async function () {
+        if (!requireLogin()) return;
+
+        const post = getCurrentPostForAction();
+
+        if (!post || !post.postId) {
+            if (typeof toast === 'function') toast('스크랩할 게시글 정보를 찾을 수 없습니다.');
+            return;
+        }
+
+        const category = getCurrentPostCategory(post);
+
+        try {
+            const res = await api.post(`/api/posts/${post.postId}/scraps?category=${category}`, {});
+
+            if (res && res.success === false) {
+                if (typeof toast === 'function') {
+                    toast(res.message || '스크랩에 실패했습니다.');
+                }
+                return;
+            }
+
+            if (typeof toast === 'function') toast('스크랩되었습니다.');
+
+            if (typeof window.loadMyCommunityScraps === 'function') {
+                setTimeout(window.loadMyCommunityScraps, 200);
+            }
+        } catch (e) {
+            console.error('[community-v2] 커뮤니티 스크랩 실패:', e);
+            if (typeof toast === 'function') toast('스크랩에 실패했습니다.');
+        }
+    };
+
+    /*
+     * 미리보기 모달 - 해당 경로로 여행 계획하기
+     * 현재는 실제 planId를 저장한 뒤 map으로 이동한다.
+     */
+    window.addCurrentPreviewPlanToMyTrips = function () {
+        if (!requireLogin()) return;
+
+        const post = getCurrentPostForAction();
+
+        if (!post || !post.planId) {
+            if (typeof toast === 'function') toast('연결된 여행 계획을 찾을 수 없습니다.');
+            return;
+        }
+
+        sessionStorage.setItem('selectedPlanId', String(post.planId));
+        sessionStorage.setItem('communityPreviewPlanId', String(post.planId));
+        sessionStorage.setItem('communityPreviewPostId', String(post.postId || ''));
+
+        window._currentTripId = Number(post.planId);
+
+        if (typeof closeCommunityPlanPreview === 'function') {
+            closeCommunityPlanPreview();
+        }
+
+        if (typeof toast === 'function') {
+            toast('경로가 추가되었습니다.');
+        }
+
+        /*
+         * map 화면 자체가 아직 더미 기반이면 제목/경로까지 완전히 바꾸려면
+         * map 쪽 렌더 함수가 selectedPlanId를 읽도록 별도 연결이 필요하다.
+         * 여기서는 우선 실제 planId를 저장하고 이동만 담당한다.
+         */
+        if (typeof go === 'function') {
+            go('map');
+        }
+    };
+
+    /*
+     * 미리보기 모달 버튼을 위 함수들로 재연결
+     */
+    function bindPreviewModalButtons() {
+        const goBtn = document.getElementById('cpp-go-planner-btn');
+        const scrapBtn = document.querySelector('.community-plan-preview-actions .cpp-sub-btn');
+
+        if (goBtn) {
+            goBtn.onclick = window.addCurrentPreviewPlanToMyTrips;
+            goBtn.textContent = '→ 해당 경로로 여행 계획하기';
+        }
+
+        if (scrapBtn) {
+            scrapBtn.onclick = window.scrapCurrentPreviewPlan;
+            scrapBtn.textContent = '📌 스크랩';
+        }
+    }
+
+    const prevOpenCommunityPlanPreview = window.openCommunityPlanPreview;
+
+    if (
+        typeof prevOpenCommunityPlanPreview === 'function' &&
+        !prevOpenCommunityPlanPreview.__communityActionWrapped
+    ) {
+        window.openCommunityPlanPreview = async function () {
+            const result = await prevOpenCommunityPlanPreview.apply(this, arguments);
+
+            setTimeout(bindPreviewModalButtons, 50);
+            setTimeout(bindPreviewModalButtons, 200);
+
+            return result;
+        };
+
+        window.openCommunityPlanPreview.__communityActionWrapped = true;
+    }
+
+    /*
+     * 마이페이지 - 스크랩한 커뮤니티 목록 렌더링
+     * page_mypage.html에 있는 #my-scrap-community-list만 채운다.
+     */
+    window.loadMyCommunityScraps = async function () {
+        const box = document.getElementById('my-scrap-community-list');
+
+        if (!box) {
+            console.warn('[community-v2] my-scrap-community-list를 찾지 못했습니다.');
+            return;
+        }
+
+        box.innerHTML = `
+        <div style="color:var(--text3);font-size:13px;padding:14px 0">
+            불러오는 중...
+        </div>
+    `;
+
+        try {
+            /*
+             * POST_SCRAPS DB 기반 조회
+             * PostController: GET /api/posts/scrapped
+             */
+            const res = await api.get('/api/posts/scrapped');
+
+            const scraps = Array.isArray(res)
+                ? res
+                : Array.isArray(res?.data)
+                    ? res.data
+                    : [];
+
+            if (!scraps.length) {
+                box.innerHTML = `
+                <div style="color:var(--text3);font-size:13px;padding:14px 0">
+                    스크랩한 커뮤니티 글이 없습니다.
+                </div>
+            `;
+                return;
+            }
+
+            box.innerHTML = scraps.map(post => {
+                const postId = post.postId || post.id;
+                const title = post.title || '스크랩한 커뮤니티 글';
+                const category = post.catLabel || post.category || '커뮤니티';
+                const writer = post.writerName || '';
+                const likes = post.likes ?? post.likeCount ?? 0;
+                const views = post.views ?? post.viewCount ?? 0;
+
+                return `
+                <div class="post-card"
+                     style="cursor:pointer"
+                     onclick="${postId ? `openPostDetail(${postId})` : ''}">
+                    <span class="post-cat">${esc(category)}</span>
+
+                    <div class="post-ttl" style="margin-top:5px">
+                        ${esc(title)}
+                    </div>
+
+                    <div style="font-size:12px;color:var(--text3);margin-top:6px">
+                        ${writer ? esc(writer) : '작성자'}
+                    </div>
+
+                    <div class="post-foot">
+                        <div class="post-stats">
+                            <span class="post-stat">❤️ ${esc(likes)}</span>
+                            <span class="post-stat">👁 ${esc(views)}</span>
+                        </div>
+                    </div>
+                </div>
+            `;
+            }).join('');
+        } catch (e) {
+            console.error('[community-v2] 스크랩한 커뮤니티 조회 실패:', e);
+
+            box.innerHTML = `
+            <div style="color:var(--text3);font-size:13px;padding:14px 0">
+                스크랩 목록을 불러오지 못했습니다.
+            </div>
+        `;
+        }
+    };
+})();
+
+/* =============================================================================
+ * community v2 - 최종: CTA 경로를 내 여행기록에 추가 + 커뮤니티 스크랩 목록 표시
+ * 전제:
+ * - page_mypage.html에 my-scrap-community 버튼/섹션 직접 추가 완료
+ * - 백엔드 플랜 복사 API가 없으므로 프론트 localStorage로 내 여행기록 표시 보정
+ * ============================================================================= */
+(function () {
+    'use strict';
+
+    const COMMUNITY_TRIP_KEY = 'communityAddedTrips';
+
+    function esc(value) {
+        return String(value ?? '')
+            .replaceAll('&', '&amp;')
+            .replaceAll('<', '&lt;')
+            .replaceAll('>', '&gt;')
+            .replaceAll('"', '&quot;')
+            .replaceAll("'", '&#039;');
+    }
+
+    function getAccessToken() {
+        if (typeof Token !== 'undefined' && Token.getAccess) {
+            return Token.getAccess();
+        }
+
+        return localStorage.getItem('accessToken');
+    }
+
+    function requireLogin() {
+        if (!getAccessToken()) {
+            if (typeof toast === 'function') toast('로그인이 필요합니다.');
+            if (typeof go === 'function') go('login');
+            return false;
+        }
+
+        return true;
+    }
+
+    function extractArray(res) {
+        if (Array.isArray(res)) return res;
+        if (Array.isArray(res?.data)) return res.data;
+        if (Array.isArray(res?.data?.content)) return res.data.content;
+        if (Array.isArray(res?.content)) return res.content;
+        return [];
+    }
+
+    function getCurrentPostForAction() {
+        return window._currentPostDetail || null;
+    }
+
+    function getCurrentPostCategory(post) {
+        return String(post?.category || window._currentPostCategory || 'ROUTE').toUpperCase();
+    }
+
+    function readLocalTrips() {
+        try {
+            return JSON.parse(localStorage.getItem(COMMUNITY_TRIP_KEY) || '[]');
+        } catch (e) {
+            return [];
+        }
+    }
+
+    function saveLocalTrips(list) {
+        localStorage.setItem(COMMUNITY_TRIP_KEY, JSON.stringify(list || []));
+    }
+
+    /*
+     * 내 여행기록에 커뮤니티 경로 추가
+     */
+    function addPostPlanToLocalTrips(post) {
+        const planId = post.planId;
+        if (!planId) return;
+
+        const oldList = readLocalTrips();
+        const exists = oldList.some(item => String(item.tripId) === String(planId));
+
+        if (exists) return;
+
+        oldList.unshift({
+            tripId: planId,
+            planId: planId,
+            title: post.planTitle || post.title || '커뮤니티에서 추가한 여행 경로',
+            startDate: post.planStartDate || '',
+            endDate: post.planEndDate || '',
+            destination: post.planDestination || '',
+            status: 'CONFIRMED',
+            fromCommunity: true,
+            postId: post.postId || null
+        });
+
+        saveLocalTrips(oldList);
+    }
+
+    /*
+     * app_main.js의 _renderMyTrips는 /api/trips 결과만 렌더링하므로
+     * localStorage에 저장한 커뮤니티 추가 경로를 합쳐서 렌더링하도록 감싼다.
+     */
+    function wrapRenderMyTrips() {
+        if (typeof window._renderMyTrips !== 'function') return;
+        if (window._renderMyTrips.__communityAddedTripsWrapped) return;
+
+        const originalRenderMyTrips = window._renderMyTrips;
+
+        window._renderMyTrips = function (trips) {
+            const baseTrips = Array.isArray(trips) ? trips : [];
+            const localTrips = readLocalTrips();
+
+            const map = new Map();
+
+            baseTrips.forEach(trip => {
+                const id = trip.tripId || trip.planId || trip.id || trip.travelPlanId;
+                if (id) map.set(String(id), trip);
+            });
+
+            localTrips.forEach(trip => {
+                const id = trip.tripId || trip.planId || trip.id || trip.travelPlanId;
+                if (id && !map.has(String(id))) {
+                    map.set(String(id), trip);
+                }
+            });
+
+            originalRenderMyTrips([...map.values()]);
+
+            /*
+             * 커뮤니티에서 추가한 경로 카드는 클릭 시 해당 planId를 세션에 넣고 map으로 이동
+             */
+            setTimeout(function () {
+                document.querySelectorAll('#my-trips .trip-card').forEach(card => {
+                    const titleEl = card.querySelector('.trip-ttl');
+                    if (!titleEl) return;
+
+                    const found = localTrips.find(t => t.title === titleEl.textContent);
+
+                    if (!found || !found.tripId) return;
+
+                    card.onclick = function () {
+                        sessionStorage.setItem('plannerDraftId', String(found.tripId));
+                        sessionStorage.setItem('selectedPlanId', String(found.tripId));
+                        window._currentTripId = Number(found.tripId);
+
+                        if (typeof go === 'function') {
+                            go('map');
+                        }
+                    };
+                });
+            }, 50);
+        };
+
+        window._renderMyTrips.__communityAddedTripsWrapped = true;
+    }
+
+    /*
+     * showMySection 보정:
+     * page_mypage.html에 추가한 scrap-community 섹션도 정상 로드
+     */
+    function wrapShowMySection() {
+        if (typeof window.showMySection !== 'function') return;
+        if (window.showMySection.__communityScrapWrapped) return;
+
+        const originalShowMySection = window.showMySection;
+
+        window.showMySection = function (sec, btn) {
+            const result = originalShowMySection.apply(this, arguments);
+
+            if (sec === 'scrap-community') {
+                setTimeout(window.loadMyCommunityScraps, 50);
+            }
+
+            return result;
+        };
+
+        window.showMySection.__communityScrapWrapped = true;
+    }
+
+    /*
+     * CTA 미리보기 모달: 해당 경로로 여행 계획하기
+     * 원하는 동작:
+     * - 내 여행기록에 추가
+     * - 마이페이지로 이동
+     * - 내 여행 기록 탭 표시
+     * - 토스트: 내 여행기록에 추가되었습니다
+     */
+    window.addCurrentPreviewPlanToMyTrips = async function () {
+        if (!requireLogin()) return;
+
+        const post = getCurrentPostForAction();
+
+        if (!post || !post.planId) {
+            if (typeof toast === 'function') toast('연결된 여행 계획을 찾을 수 없습니다.');
+            return;
+        }
+
+        addPostPlanToLocalTrips(post);
+
+        sessionStorage.setItem('plannerDraftId', String(post.planId));
+        sessionStorage.setItem('selectedPlanId', String(post.planId));
+        sessionStorage.setItem('communityPreviewPlanId', String(post.planId));
+        sessionStorage.setItem('communityPreviewPostId', String(post.postId || ''));
+
+        window._currentTripId = Number(post.planId);
+
+        if (typeof closeCommunityPlanPreview === 'function') {
+            closeCommunityPlanPreview();
+        }
+
+        wrapRenderMyTrips();
+
+        if (typeof go === 'function') {
+            go('mypage');
+        }
+
+        setTimeout(function () {
+            wrapRenderMyTrips();
+
+            if (typeof updateMyPageUI === 'function') {
+                updateMyPageUI();
+            }
+        }, 100);
+
+        setTimeout(function () {
+            const tripsBtn = [...document.querySelectorAll('#page-mypage .my-menu')]
+                .find(btn => (btn.textContent || '').includes('내 여행 기록'));
+
+            if (typeof showMySection === 'function' && tripsBtn) {
+                showMySection('trips', tripsBtn);
+            }
+
+            if (typeof toast === 'function') {
+                toast('내 여행기록에 추가되었습니다.');
+            }
+        }, 500);
+    };
+
+    /*
+     * CTA 미리보기 모달: 스크랩
+     */
+    window.scrapCurrentPreviewPlan = async function () {
+        if (!requireLogin()) return;
+
+        const post = getCurrentPostForAction();
+
+        if (!post || !post.postId) {
+            if (typeof toast === 'function') toast('스크랩할 게시글 정보를 찾을 수 없습니다.');
+            return;
+        }
+
+        const category = getCurrentPostCategory(post);
+
+        try {
+            /*
+             * POST_SCRAPS DB에 저장
+             */
+            const res = await api.post(`/api/posts/${post.postId}/scraps?category=${category}`, {});
+
+            if (res && res.success === false) {
+                if (typeof toast === 'function') {
+                    toast(res.message || '스크랩에 실패했습니다.');
+                }
+                return;
+            }
+
+            if (typeof toast === 'function') {
+                toast('스크랩되었습니다.');
+            }
+
+            /*
+             * 마이페이지 스크랩한 커뮤니티 목록 다시 조회
+             * 이제 localStorage가 아니라 /api/posts/scrapped 사용
+             */
+            if (typeof window.loadMyCommunityScraps === 'function') {
+                setTimeout(window.loadMyCommunityScraps, 200);
+            }
+        } catch (e) {
+            console.error('[community-v2] 커뮤니티 스크랩 실패:', e);
+
+            if (typeof toast === 'function') {
+                toast('스크랩에 실패했습니다.');
+            }
+        }
+    };
+
+    /*
+     * 미리보기 모달 버튼 재연결
+     */
+    function bindCommunityPreviewButtons() {
+        const goBtn = document.getElementById('cpp-go-planner-btn');
+        const scrapBtn = document.querySelector('.community-plan-preview-actions .cpp-sub-btn');
+
+        if (goBtn) {
+            goBtn.onclick = window.addCurrentPreviewPlanToMyTrips;
+            goBtn.textContent = '→ 해당 경로로 여행 계획하기';
+        }
+
+        if (scrapBtn) {
+            scrapBtn.onclick = window.scrapCurrentPreviewPlan;
+            scrapBtn.textContent = '📌 스크랩';
+        }
+    }
+
+    const prevOpenCommunityPlanPreview = window.openCommunityPlanPreview;
+
+    if (
+        typeof prevOpenCommunityPlanPreview === 'function' &&
+        !prevOpenCommunityPlanPreview.__communityFinalActionWrapped
+    ) {
+        window.openCommunityPlanPreview = async function () {
+            const result = await prevOpenCommunityPlanPreview.apply(this, arguments);
+
+            setTimeout(bindCommunityPreviewButtons, 50);
+            setTimeout(bindCommunityPreviewButtons, 200);
+
+            return result;
+        };
+
+        window.openCommunityPlanPreview.__communityFinalActionWrapped = true;
+    }
+
+    window.loadMyCommunityScraps = async function () {
+        const box = document.getElementById('my-scrap-community-list');
+
+        if (!box) {
+            console.warn('[community-v2] my-scrap-community-list를 찾지 못했습니다.');
+            return;
+        }
+
+        box.innerHTML = `
+        <div style="color:var(--text3);font-size:13px;padding:14px 0">
+            불러오는 중...
+        </div>
+    `;
+
+        try {
+            /*
+             * POST_SCRAPS DB 기반 조회
+             * Controller: GET /api/posts/scrapped
+             */
+            const res = await api.get('/api/posts/scrapped');
+
+            const scraps = Array.isArray(res)
+                ? res
+                : Array.isArray(res?.data)
+                    ? res.data
+                    : [];
+
+            if (!scraps.length) {
+                box.innerHTML = `
+                <div style="color:var(--text3);font-size:13px;padding:14px 0">
+                    스크랩한 커뮤니티 글이 없습니다.
+                </div>
+            `;
+                return;
+            }
+
+            box.innerHTML = scraps.map(post => {
+                const postId = post.postId || post.id;
+                const title = post.title || '스크랩한 커뮤니티 글';
+                const category = post.catLabel || post.category || '커뮤니티';
+                const writer = post.writerName || '';
+                const likes = post.likes ?? post.likeCount ?? 0;
+                const views = post.views ?? post.viewCount ?? 0;
+
+                return `
+                <div class="post-card"
+                     style="cursor:pointer"
+                     onclick="${postId ? `openPostDetail(${postId})` : ''}">
+                    <span class="post-cat">${esc(category)}</span>
+
+                    <div class="post-ttl" style="margin-top:5px">
+                        ${esc(title)}
+                    </div>
+
+                    <div style="font-size:12px;color:var(--text3);margin-top:6px">
+                        ${writer ? esc(writer) : '작성자'}
+                    </div>
+
+                    <div class="post-foot">
+                        <div class="post-stats">
+                            <span class="post-stat">❤️ ${esc(likes)}</span>
+                            <span class="post-stat">👁 ${esc(views)}</span>
+                        </div>
+                    </div>
+                </div>
+            `;
+            }).join('');
+        } catch (e) {
+            console.error('[community-v2] 스크랩한 커뮤니티 조회 실패:', e);
+
+            box.innerHTML = `
+            <div style="color:var(--text3);font-size:13px;padding:14px 0">
+                스크랩 목록을 불러오지 못했습니다.
+            </div>
+        `;
+        }
+    };
+
+    setTimeout(wrapRenderMyTrips, 300);
+    setTimeout(wrapShowMySection, 300);
+    setTimeout(bindCommunityPreviewButtons, 500);
 })();

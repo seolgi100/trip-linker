@@ -77,6 +77,14 @@ public class PostController {
         return ResponseEntity.ok(postService.getMyLikedPosts(userDetails.getUserId()));
     }
 
+    // 마이페이지 - 내가 스크랩한 커뮤니티 게시글 목록 조회
+    @GetMapping("/scrapped")
+    public ResponseEntity<List<PostListResponseDto>> getMyScrappedPosts(
+            @AuthenticationPrincipal CustomUserDetails userDetails
+    ) {
+        return ResponseEntity.ok(postService.getMyScrappedPosts(userDetails.getUserId()));
+    }
+
     // 커뮤니티 - 게시글 작성
     @PostMapping
     public ResponseEntity<Long> createPost(

@@ -46,6 +46,13 @@ public class PostScrap {
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
 
+    @PrePersist
+    protected void onCreate() {
+        if (createdAt == null) {
+            createdAt = LocalDateTime.now();
+        }
+    }
+
     @Builder
     public PostScrap(User user, Post post, String category) {
         this.user = user;

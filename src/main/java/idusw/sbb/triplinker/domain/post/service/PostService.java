@@ -58,6 +58,21 @@ public class PostService {
                 .collect(Collectors.toList());
     }
 
+    // 마이페이지 - 내가 스크랩한 커뮤니티 게시글 목록 조회
+    public List<PostListResponseDto> getMyScrappedPosts(Long userId) {
+        return postScrapRepository.findByUserIdOrderByCreatedAtDesc(
+                        userId,
+                        Pageable.unpaged()
+                )
+                .getContent()
+                .stream()
+                .map(scrap -> PostListResponseDto.from(
+                        scrap.getPost(),
+                        (int) postScrapRepository.countByPost_Id(scrap.getPost().getId())
+                ))
+                .collect(Collectors.toList());
+    }
+
     // 커뮤니티 - 게시글 목록 조회
     public Page<PostListResponseDto> getPosts(Pageable pageable, String category) {
         Page<Post> posts;

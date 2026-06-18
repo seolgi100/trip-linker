@@ -223,6 +223,7 @@
       <button class="my-menu on" onclick="showMySection('trips',this)">📋 내 여행 기록</button>
       <button class="my-menu" onclick="showMySection('reviews',this)">✍️ 작성한 후기</button>
       <button class="my-menu" onclick="showMySection('likes',this)">❤️ 좋아요한 후기</button>
+      <button class="my-menu" onclick="showMySection('scrap-community',this); loadMyCommunityScraps();">🔖 스크랩한 커뮤니티</button>
       <button class="my-menu" onclick="showMySection('scrap-stay',this)">🏨 스크랩한 숙소</button>
       <button class="my-menu" onclick="showMySection('scrap-food',this)">🍽️ 스크랩한 맛집</button>
       <button class="my-menu" onclick="showMySection('scrap-tour',this)">🗺️ 스크랩한 관광지</button>
@@ -247,6 +248,15 @@
       <div id="my-likes" style="display:none">
         <h3 class="my-sec-ttl">좋아요한 후기</h3>
         <div id="my-likes-list"></div>
+      </div>
+
+      <div id="my-scrap-community" style="display:none">
+        <h3 class="my-sec-ttl">스크랩한 커뮤니티</h3>
+        <div id="my-scrap-community-list">
+          <div style="color:var(--text3);font-size:13px;padding:14px 0">
+            스크랩한 커뮤니티 글이 없습니다.
+          </div>
+        </div>
       </div>
 
       <div id="my-scrap-stay" style="display:none">
