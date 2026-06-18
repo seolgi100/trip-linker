@@ -402,11 +402,22 @@
                </div>`
             : '';
 
+        const imageHtml = (post.imageUrls && post.imageUrls.length)
+            ? `<div style="display:flex;flex-direction:column;gap:10px;margin-bottom:16px">
+                ${post.imageUrls.map(url =>
+                    `<img src="${escapeHtml(url)}" alt="첨부 이미지"
+                          style="max-width:100%;border-radius:10px;display:block"
+                          onerror="this.style.display='none'">`
+                ).join('')}
+               </div>`
+            : '';
+
         setHtml('pr-body', `
             ${tagHtml}
             <div style="white-space:pre-wrap;line-height:1.8;color:var(--text2);font-size:15px">
                 ${escapeHtml(post.content || '')}
             </div>
+            ${imageHtml}
         `);
 
         renderLinkedPlan(post);
@@ -633,6 +644,29 @@
             categoryCode: categoryCode
         });
 
+        // 선택된 이미지가 있으면 먼저 서버에 업로드하고 URL 목록을 받아오기
+        let imageUrls = [];
+        const selectedImages = window._communitySelectedImages || [];
+
+        if (selectedImages.length > 0) {
+            const formData = new FormData();
+            selectedImages.forEach(item => formData.append('files', item.file));
+
+            const token = Token.getAccess();
+            const uploadRes = await fetch('/api/posts/images', {
+                method: 'POST',
+                headers: token ? { Authorization: 'Bearer ' + token } : {},
+                body: formData
+            });
+
+            if (!uploadRes.ok) {
+                if (typeof toast === 'function') toast('이미지 업로드에 실패했습니다.');
+                return;
+            }
+
+            imageUrls = await uploadRes.json();
+        }
+
         const body = {
             planId: document.getElementById('writePlanId')?.value
                 ? Number(document.getElementById('writePlanId').value)
@@ -641,7 +675,8 @@
             content: content,
             styleTags: styleTags,
             category: categoryCode,
-            isPublic: isPublic
+            isPublic: isPublic,
+            imageUrls: imageUrls
         };
 
         console.log('[submitReview body]', body);
@@ -654,6 +689,8 @@
             typeof res?.data === 'number';
 
         if (success) {
+            window._communitySelectedImages = [];
+
             if (typeof closeWrite === 'function') {
                 closeWrite();
             }
@@ -880,6 +917,7 @@
                 const dataUrl = event.target.result;
 
                 window._communitySelectedImages.push({
+                    file: file,
                     name: file.name,
                     type: file.type,
                     size: file.size,
@@ -933,6 +971,9 @@
 
     if (typeof prevCheckAndOpenWriteForImage === 'function') {
         window.checkAndOpenWrite = function () {
+            // 새 작성 모달이 열릴 때마다 이전 이미지 선택 상태를 초기화한다
+            window._communitySelectedImages = [];
+
             const result = prevCheckAndOpenWriteForImage.apply(this, arguments);
 
             setTimeout(function () {
