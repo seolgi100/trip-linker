@@ -379,6 +379,7 @@
         window._currentPostId = post.postId;
         window._openedPostId = post.postId;
         window._currentPostCategory = post.category || 'ROUTE';
+        window._currentPostDetail = post;
 
         const tags = parseStyleTags(post.styleTags);
 
@@ -991,9 +992,10 @@
             const result = await prevOpenPostDetailForPreviewButton.apply(this, arguments);
 
             try {
-                const res = await api.get(`/api/posts/${postId}`);
-                if (res && res.success !== false && res.data) {
-                    addPreviewButtonToPlanBadge(res.data);
+                const post = window._currentPostDetail;
+
+                if (post) {
+                    addPreviewButtonToPlanBadge(post);
                 }
             } catch (e) {
                 console.warn('[community-v2] 미리보기 버튼 연결 실패:', e);
@@ -1918,11 +1920,10 @@
     };
 
     async function beautifyReviewDetail(postId) {
-        const res = await api.get(`/api/posts/${postId}`);
+        const post = window._currentPostDetail;
 
-        if (!res || res.success === false || !res.data) return;
+        if (!post) return;
 
-        const post = res.data;
         const routeData = await getRouteData(post);
 
         removeBodyInlineTags();
@@ -1971,24 +1972,38 @@
     }
 
     function parseStyleTags(styleTags) {
+        function cleanTag(value) {
+            return String(value ?? '')
+                .trim()
+                .replace(/^#/, '')
+                .replaceAll('[', '')
+                .replaceAll(']', '')
+                .replaceAll('"', '')
+                .trim();
+        }
+
         if (!styleTags) return [];
 
         if (Array.isArray(styleTags)) {
-            return styleTags.map(v => String(v).trim()).filter(Boolean);
+            return styleTags
+                .map(cleanTag)
+                .filter(Boolean);
         }
 
         try {
             const parsed = JSON.parse(styleTags);
             if (Array.isArray(parsed)) {
-                return parsed.map(v => String(v).trim()).filter(Boolean);
+                return parsed
+                    .map(cleanTag)
+                    .filter(Boolean);
             }
         } catch (e) {
-            // JSON 문자열이 아니면 쉼표 문자열로 처리
+            // JSON 문자열이 아니면 아래에서 처리
         }
 
         return String(styleTags)
             .split(',')
-            .map(v => v.trim().replace(/^#/, ''))
+            .map(cleanTag)
             .filter(Boolean);
     }
 
@@ -2623,11 +2638,10 @@
     async function applyPlaceTypeDetail(postId) {
         if (!postId) return;
 
-        const res = await api.get(`/api/posts/${postId}`);
+        const post = window._currentPostDetail;
 
-        if (!res || res.success === false || !res.data) return;
+        if (!post) return;
 
-        const post = res.data;
         const category = normalizeCategory(post.category);
 
         /*

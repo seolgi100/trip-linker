@@ -81,8 +81,15 @@ public record PostListResponseDto(
             return List.of();
         }
 
-        return Arrays.stream(styleTags.split(","))
+        String normalized = styleTags
+                .trim()
+                .replace("[", "")
+                .replace("]", "")
+                .replace("\"", "");
+
+        return Arrays.stream(normalized.split(","))
                 .map(String::trim)
+                .map(tag -> tag.replace("#", ""))
                 .filter(tag -> !tag.isBlank())
                 .toList();
     }
