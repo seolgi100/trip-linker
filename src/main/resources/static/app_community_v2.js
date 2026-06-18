@@ -2888,3 +2888,426 @@
         await window.openPostDetail(postId);
     };
 })();
+
+/* =============================================================================
+ * community v3 - 장소 리뷰
+ *
+ * 탭 렌더링
+ *   setCommTab 패치 → place 탭이면 loadPlaceCards 직접 호출
+ *   loadPlaceCards   → GET /api/places?category=...  → 장소 카드 렌더
+ *   openPlaceReviews → GET /api/places/{id}/posts    → 해당 장소 후기 목록
+ *
+ * 후기 작성 모달
+ *   onWritePlanSelect → routeJson 파싱 → 별점/한줄평 입력 행 렌더
+ *   submitReview 래퍼 → 장소 리뷰 일괄 저장 (POST /api/posts/{id}/place-reviews)
+ * ============================================================================= */
+
+(function () {
+    'use strict';
+
+    /* ------------------------------------------------------------------
+     * 상수 / 헬퍼
+     * ------------------------------------------------------------------ */
+    var PLACE_TABS = { stay: 'stay', food: 'food', tour: 'tour', cafe: 'cafe' };
+    var TYPE_ICON  = { stay: '🏨', food: '🍽️', cafe: '☕', tour: '🎡' };
+    var TYPE_CSS   = { stay: 'pr-stay', food: 'pr-food', cafe: 'pr-cafe', tour: 'pr-tour' };
+
+    function esc(str) {
+        return String(str || '')
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;');
+    }
+
+    function starsHtml(rating) {
+        var s = '';
+        for (var i = 1; i <= 5; i++) s += i <= rating ? '★' : '☆';
+        return s;
+    }
+
+    function extractList(res) {
+        if (Array.isArray(res && res.data)) return res.data;
+        if (Array.isArray(res)) return res;
+        return [];
+    }
+
+    /* ------------------------------------------------------------------
+     * 중복 로드 방지 가드
+     * ------------------------------------------------------------------ */
+    var _loading = {};   // key: 'stay:0', 'food:0', ...
+
+    /* ------------------------------------------------------------------
+     * 장소 카드 렌더링
+     * ------------------------------------------------------------------ */
+    async function loadPlaceCards(type, page, reset) {
+        var key   = type + ':' + (page || 0);
+        if (_loading[key]) return;   // 중복 호출 방지
+        _loading[key] = true;
+
+        var tabEl = document.getElementById('tab-' + type);
+        if (!tabEl) { _loading[key] = false; return; }
+
+        if (reset !== false) {
+            tabEl.innerHTML = '<div class="comm-empty">불러오는 중...</div>';
+        }
+
+        try {
+            var res  = await api.get('/api/places?category=' + type + '&page=' + (page || 0) + '&size=20');
+            var list = extractList(res);
+
+            tabEl.innerHTML = '';
+
+            if (!list.length) {
+                tabEl.innerHTML = '<div class="comm-empty">등록된 장소가 없습니다.</div>';
+                return;
+            }
+
+            var frag = document.createDocumentFragment();
+            list.forEach(function (card) {
+                var el = document.createElement('div');
+                el.className = 'place-card-item';
+                el.innerHTML = [
+                    '<div class="place-card-info">',
+                    '  <span class="place-card-icon ' + (TYPE_CSS[card.category] || 'pr-tour') + '">',
+                         (TYPE_ICON[card.category] || '📍'),
+                    '  </span>',
+                    '  <span class="place-card-name">' + esc(card.name) + '</span>',
+                    '</div>',
+                    '<div class="place-card-meta">',
+                    '  <span class="place-card-stars">' + starsHtml(Math.round(card.avgRating || 0)) + '</span>',
+                    '  <span class="place-card-avg">' + (card.avgRating || 0).toFixed(1) + '</span>',
+                    '  <span class="place-card-count">후기 ' + (card.reviewCount || 0) + '개</span>',
+                    '</div>'
+                ].join('');
+                el.addEventListener('click', function () {
+                    openPlaceReviews(card.placeId, card.name, type, card.avgRating, card.reviewCount);
+                });
+                frag.appendChild(el);
+            });
+            tabEl.appendChild(frag);
+
+        } catch (e) {
+            console.error('[place-tab] 장소 카드 로드 실패:', e);
+            tabEl.innerHTML = '<div class="comm-empty">장소 정보를 불러오지 못했습니다.</div>';
+        } finally {
+            _loading[key] = false;
+        }
+    }
+
+    /* ------------------------------------------------------------------
+     * 장소 카드 클릭 → 평균 별점 + 리뷰 목록
+     * ------------------------------------------------------------------ */
+    async function openPlaceReviews(placeId, placeName, type, avgRating, reviewCount) {
+        var tabEl = document.getElementById('tab-' + type);
+        if (!tabEl) return;
+
+        tabEl.innerHTML = '<div class="comm-empty">불러오는 중...</div>';
+
+        try {
+            var res     = await api.get('/api/places/' + placeId + '/reviews');
+            var reviews = extractList(res);
+
+            tabEl.innerHTML = '';
+
+            // 흰 배경 래퍼
+            var wrap = document.createElement('div');
+            wrap.className = 'place-review-wrap';
+
+            // 뒤로가기
+            var back = document.createElement('button');
+            back.className   = 'place-back-btn';
+            back.textContent = '← 목록으로';
+            back.addEventListener('click', function () { loadPlaceCards(type, 0, true); });
+            wrap.appendChild(back);
+
+            // 평균 별점 헤더 (가운데 정렬, 크게)
+            var avg = avgRating != null ? Number(avgRating) : 0;
+            var cnt = reviewCount != null ? Number(reviewCount) : reviews.length;
+            var header = document.createElement('div');
+            header.className = 'place-review-header';
+            header.innerHTML = [
+                '<div class="place-review-name">📍 ' + esc(placeName) + '</div>',
+                '<div class="place-avg-stars">' + starsHtml(Math.round(avg)) + '</div>',
+                '<div class="place-avg-score">' + avg.toFixed(1) + '</div>',
+                '<div class="place-avg-count">' + cnt + '개 후기</div>'
+            ].join('');
+            wrap.appendChild(header);
+
+            if (!reviews.length) {
+                var empty = document.createElement('div');
+                empty.className   = 'comm-empty';
+                empty.textContent = '이 장소에 대한 후기가 없습니다.';
+                wrap.appendChild(empty);
+                tabEl.appendChild(wrap);
+                return;
+            }
+
+            // 리뷰 목록
+            var listEl = document.createElement('div');
+            listEl.className = 'place-review-list';
+
+            reviews.forEach(function (r) {
+                var el = document.createElement('div');
+                el.className = 'place-review-item';
+
+                var hasComment = r.comment && r.comment.trim();
+
+                el.innerHTML = [
+                    '<div class="pri-top">',
+                    '  <span class="pri-stars">' + starsHtml(r.rating) + '</span>',
+                    '  <span class="pri-writer">' + esc(r.writerName || '') + '</span>',
+                    '</div>',
+                    hasComment
+                        ? '<div class="pri-comment">' + esc(r.comment.trim()) + '</div>' +
+                          '<button class="pri-toggle-btn" data-expanded="false">자세히 보기</button>'
+                        : '',
+                    r.postId
+                        ? '<button class="pri-goto">해당 후기로 이동 →</button>'
+                        : ''
+                ].join('');
+
+                // 자세히 보기 / 접기 토글
+                if (hasComment) {
+                    var commentEl = el.querySelector('.pri-comment');
+                    var toggleBtn = el.querySelector('.pri-toggle-btn');
+                    toggleBtn.addEventListener('click', function () {
+                        var expanded = this.dataset.expanded === 'true';
+                        commentEl.classList.toggle('expanded', !expanded);
+                        this.textContent  = expanded ? '자세히 보기' : '접기';
+                        this.dataset.expanded = String(!expanded);
+                    });
+                    // 짧은 텍스트면 버튼 숨김 (DOM에 붙은 후 체크)
+                    requestAnimationFrame(function () {
+                        if (commentEl.scrollHeight <= commentEl.clientHeight + 2) {
+                            toggleBtn.style.display = 'none';
+                        }
+                    });
+                }
+
+                // 해당 후기로 이동
+                if (r.postId) {
+                    el.querySelector('.pri-goto').addEventListener('click', function () {
+                        if (typeof window.openPostDetail === 'function') window.openPostDetail(r.postId);
+                    });
+                }
+
+                listEl.appendChild(el);
+            });
+
+            wrap.appendChild(listEl);
+            tabEl.appendChild(wrap);
+
+        } catch (e) {
+            console.error('[place-tab] 장소 후기 로드 실패:', e);
+            tabEl.innerHTML = '<div class="comm-empty">후기를 불러오지 못했습니다.</div>';
+        }
+    }
+
+    /* ------------------------------------------------------------------
+     * setCommTab 패치
+     *   - place 탭 클릭 시 loadPlaceCards 직접 호출
+     *   - route 탭은 기존 loadCommunityPosts 흐름 그대로
+     * ------------------------------------------------------------------ */
+    function patchSetCommTab() {
+        if (typeof window.setCommTab !== 'function') {
+            setTimeout(patchSetCommTab, 50);
+            return;
+        }
+        if (window.setCommTab.__v3Patched) return;
+
+        var prev = window.setCommTab;
+        window.setCommTab = function (btn, cat) {
+            var result = prev.apply(this, arguments);
+
+            // _commState 동기화
+            try {
+                if (typeof _commState !== 'undefined') {
+                    _commState.currentTab = cat || 'route';
+                    _commState.page = 0;
+                }
+            } catch (e) {}
+
+            var placeType = PLACE_TABS[cat];
+            if (placeType) {
+                // place 탭: 장소 카드 직접 로드 (기존 wrapSetCommTabForList의 호출은 가드로 차단됨)
+                loadPlaceCards(placeType, 0, true);
+            }
+            // route 탭: wrapSetCommTabForList의 loadCommunityPosts(0, true) 흐름이 처리
+
+            return result;
+        };
+        window.setCommTab.__v3Patched     = true;
+        window.setCommTab.__communityV2ListWrapped = true; // 기존 wrapSetCommTabForList 재등록 방지
+    }
+    patchSetCommTab();
+
+    /* ------------------------------------------------------------------
+     * loadCommunityPosts 오버라이드
+     *   - place 탭이면 loadPlaceCards 위임 (중복 가드로 실제 fetch 방지)
+     *   - route 탭이면 기존 함수 그대로
+     * ------------------------------------------------------------------ */
+    var _origLoadPosts = window.loadCommunityPosts;
+
+    window.loadCommunityPosts = async function (page, reset) {
+        var cat;
+        try { cat = (typeof _commState !== 'undefined') ? _commState.currentTab : ''; } catch (e) { cat = ''; }
+
+        var placeType = PLACE_TABS[(cat || '').toLowerCase()];
+        if (placeType) {
+            // setCommTab 패치가 이미 처리 중 → 가드가 차단 (중복 fetch 없음)
+            return loadPlaceCards(placeType, page || 0, reset !== false);
+        }
+        return typeof _origLoadPosts === 'function'
+            ? _origLoadPosts.apply(this, arguments)
+            : undefined;
+    };
+
+    /* ------------------------------------------------------------------
+     * 후기 작성 모달 — 별 선택
+     * ------------------------------------------------------------------ */
+    window.setStars = function (btn, rating) {
+        var sel = btn.closest('.star-sel');
+        if (!sel) return;
+        sel.querySelectorAll('.star-btn').forEach(function (b, i) {
+            b.classList.toggle('lit', i < rating);
+        });
+        sel.dataset.rating = rating;
+    };
+
+    /* ------------------------------------------------------------------
+     * 후기 작성 모달 — 플랜 선택 시 장소 목록 렌더
+     * ------------------------------------------------------------------ */
+    window.onWritePlanSelect = async function (planId) {
+        var section = document.getElementById('placeReviewsSection');
+        var body    = document.getElementById('placeReviewsBody');
+        if (!section || !body) return;
+
+        if (!planId) {
+            section.style.display = 'none';
+            body.innerHTML = '<div class="plr-empty">플랜을 선택하면 방문 장소가 표시됩니다.</div>';
+            return;
+        }
+
+        body.innerHTML = '<div class="plr-empty">장소를 불러오는 중...</div>';
+        section.style.display = 'block';
+
+        try {
+            var res      = await api.get('/api/trips/' + planId);
+            var plan     = (res && res.data) || res;
+            var routeRaw = plan && (plan.routeJson || plan.route_json);
+
+            if (!routeRaw) {
+                body.innerHTML = '<div class="plr-empty">이 플랜에 경로 정보가 없습니다.</div>';
+                return;
+            }
+
+            var days;
+            try {
+                days = typeof routeRaw === 'string' ? JSON.parse(routeRaw) : routeRaw;
+            } catch (_) {
+                body.innerHTML = '<div class="plr-empty">경로 데이터를 읽을 수 없습니다.</div>';
+                return;
+            }
+
+            var places = [];
+            (Array.isArray(days) ? days : []).forEach(function (day) {
+                (day.places || []).forEach(function (p) { if (p.name) places.push(p); });
+            });
+
+            if (!places.length) {
+                body.innerHTML = '<div class="plr-empty">등록된 장소가 없습니다.</div>';
+                return;
+            }
+
+            body.innerHTML = places.map(function (p) {
+                var type     = (p.type || 'tour').toLowerCase();
+                var safeName = p.name.replace(/"/g, '&quot;');
+                return [
+                    '<div class="plr-row" data-place-name="' + safeName + '" data-place-type="' + type + '">',
+                    '  <div class="plr-icon ' + (TYPE_CSS[type] || 'pr-tour') + '">' + (TYPE_ICON[type] || '📍') + '</div>',
+                    '  <div class="plr-name">' + esc(p.name) + '</div>',
+                    '  <div class="star-sel" data-rating="0">',
+                         [1,2,3,4,5].map(function (n) {
+                             return '<button class="star-btn" onclick="setStars(this,' + n + ')">★</button>';
+                         }).join(''),
+                    '  </div>',
+                    '  <input class="one-line" placeholder="한줄평 (선택)" maxlength="200">',
+                    '</div>'
+                ].join('');
+            }).join('');
+
+        } catch (e) {
+            console.error('[place-review] 플랜 경로 로드 실패:', e);
+            body.innerHTML = '<div class="plr-empty">장소 정보를 불러오지 못했습니다.</div>';
+        }
+    };
+
+    /* ------------------------------------------------------------------
+     * 모달 재오픈 시 장소 리뷰 섹션 초기화
+     * ------------------------------------------------------------------ */
+    var _prevCheckAndOpenWrite = window.checkAndOpenWrite;
+    if (typeof _prevCheckAndOpenWrite === 'function') {
+        window.checkAndOpenWrite = function () {
+            var section = document.getElementById('placeReviewsSection');
+            var body    = document.getElementById('placeReviewsBody');
+            if (section) section.style.display = 'none';
+            if (body)    body.innerHTML = '<div class="plr-empty">플랜을 선택하면 방문 장소가 표시됩니다.</div>';
+            return _prevCheckAndOpenWrite.apply(this, arguments);
+        };
+    }
+
+    /* ------------------------------------------------------------------
+     * 후기 제출 → 장소 리뷰 일괄 저장
+     * ------------------------------------------------------------------ */
+    var _origSubmitReview = window.submitReview;
+
+    window.submitReview = async function () {
+        // 별점이 1개 이상 입력된 장소만 수집
+        var placeReviews = [];
+        document.querySelectorAll('#placeReviewsBody .plr-row').forEach(function (row) {
+            var sel    = row.querySelector('.star-sel');
+            var rating = sel ? parseInt(sel.dataset.rating, 10) : 0;
+            if (!rating) return;
+            placeReviews.push({
+                placeName: row.dataset.placeName || '',
+                placeType: row.dataset.placeType || 'tour',
+                rating:    rating,
+                comment:   ((row.querySelector('.one-line') || {}).value || '').trim() || null
+            });
+        });
+
+        window._lastCreatedPostId = null;
+        if (typeof _origSubmitReview === 'function') await _origSubmitReview();
+
+        if (!placeReviews.length) return;
+
+        var postId = window._lastCreatedPostId;
+        if (!postId) return;
+
+        try {
+            await api.post('/api/posts/' + postId + '/place-reviews', { reviews: placeReviews });
+        } catch (e) {
+            console.error('[place-review] 장소 리뷰 저장 실패:', e);
+        }
+    };
+
+    /* ------------------------------------------------------------------
+     * api.post 인터셉터 — POST /api/posts 성공 응답에서 postId 캡처
+     * ------------------------------------------------------------------ */
+    var _origApiPost = (typeof api !== 'undefined') ? api.post && api.post.bind(api) : null;
+
+    if (_origApiPost) {
+        api.post = async function (url) {
+            var res = await _origApiPost.apply(this, arguments);
+            if (/^\/api\/posts$/.test(url)) {
+                var pid = (res && typeof res.data === 'number') ? res.data
+                        : (typeof res === 'number')             ? res
+                        : null;
+                if (pid) window._lastCreatedPostId = pid;
+            }
+            return res;
+        };
+    }
+
+})();

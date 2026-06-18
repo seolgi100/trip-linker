@@ -1043,3 +1043,371 @@
 .comm-post-item .post-card {
     padding-left: 22px;
 }
+
+/* =========================================================
+ * community v3 - 후기 작성 장소별 별점 폼
+ * ========================================================= */
+
+.plr-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 10px;
+    background: var(--cream);
+    border-radius: 8px;
+    margin-bottom: 6px;
+    flex-wrap: wrap;
+}
+
+.plr-icon {
+    width: 26px;
+    height: 26px;
+    border-radius: 6px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 13px;
+    flex-shrink: 0;
+}
+
+.plr-icon.pr-stay { background: #E8F5F2; }
+.plr-icon.pr-food { background: #FEF3F2; }
+.plr-icon.pr-tour { background: #EBF4FC; }
+.plr-icon.pr-cafe { background: #F3F0FF; }
+
+.plr-name {
+    flex: 1;
+    font-size: 12px;
+    font-weight: 600;
+    min-width: 80px;
+    color: var(--text);
+}
+
+.star-sel {
+    display: flex;
+    gap: 2px;
+}
+
+.star-btn {
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-size: 17px;
+    color: var(--border);
+    transition: color .15s;
+    padding: 0 1px;
+    line-height: 1;
+}
+
+.star-btn.lit {
+    color: #F5A623;
+}
+
+.one-line {
+    flex: 1;
+    padding: 5px 8px;
+    border-radius: 6px;
+    border: 1.5px solid var(--border2);
+    background: var(--surface);
+    font-size: 12px;
+    font-family: inherit;
+    outline: none;
+    min-width: 100px;
+}
+
+.one-line:focus {
+    border-color: var(--sage);
+}
+
+#placeReviewsSection {
+    border: 1.5px solid var(--border2);
+    border-radius: 10px;
+    padding: 12px;
+    background: var(--surface);
+    margin-top: 8px;
+    display: none;
+}
+
+#placeReviewsSection .plr-section-title {
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--sage-d);
+    margin-bottom: 8px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+#placeReviewsSection .plr-note {
+    font-size: 10px;
+    color: var(--text3);
+    margin-top: 6px;
+}
+
+#placeReviewsSection .plr-empty {
+    font-size: 12px;
+    color: var(--text3);
+    text-align: center;
+    padding: 16px 0;
+}
+
+/* =========================================================
+ * community v3 - 장소 리뷰 카드 (탭 목록용)
+ * ========================================================= */
+
+.place-review-card-wrap {
+    position: relative;
+    overflow: hidden;
+    background: var(--surface);
+    border: 1px solid var(--border2);
+    border-radius: 14px;
+    padding: 14px 16px 14px 20px;
+    margin-bottom: 10px;
+    cursor: pointer;
+    transition: box-shadow .18s;
+}
+
+.place-review-card-wrap:hover {
+    box-shadow: 0 6px 20px rgba(45, 158, 138, .12);
+}
+
+.place-review-card-wrap::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 4px;
+    height: 100%;
+    border-radius: 12px 0 0 12px;
+}
+
+.place-review-card-wrap.type-stay::before { background: #2D9E8A; }
+.place-review-card-wrap.type-food::before { background: #FF6B6B; }
+.place-review-card-wrap.type-tour::before { background: #3B82F6; }
+.place-review-card-wrap.type-cafe::before { background: #A78BFA; }
+
+.place-review-card-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 4px;
+}
+
+.place-review-card-title {
+    font-size: 15px;
+    font-weight: 800;
+    color: var(--text);
+    margin-bottom: 4px;
+}
+
+.place-review-card-stars {
+    color: #F5A623;
+    font-size: 14px;
+    letter-spacing: 1px;
+}
+
+.place-review-card-comment {
+    font-size: 13px;
+    color: var(--text2);
+    line-height: 1.6;
+    margin-top: 4px;
+}
+
+.place-review-card-meta {
+    font-size: 11px;
+    color: var(--text3);
+}
+
+.place-review-section-divider {
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--text3);
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    padding: 10px 0 6px;
+    border-top: 1px dashed var(--border2);
+    margin-top: 14px;
+}
+/* =============================================================================
+ * 장소 카드 탭 (v3)
+ * ============================================================================= */
+
+.place-card-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 14px 18px;
+    margin-bottom: 10px;
+    background: var(--surface, #fff);
+    border: 1px solid var(--border2, #e8e8e8);
+    border-radius: 12px;
+    cursor: pointer;
+    transition: box-shadow .15s, border-color .15s;
+}
+.place-card-item:hover {
+    box-shadow: 0 4px 14px rgba(0,0,0,.08);
+    border-color: var(--primary, #5c7cfa);
+}
+.place-card-info {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex: 1;
+    min-width: 0;
+}
+.place-card-icon {
+    width: 34px;
+    height: 34px;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.1rem;
+    flex-shrink: 0;
+}
+.place-card-name {
+    font-weight: 600;
+    font-size: .96rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.place-card-meta {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-shrink: 0;
+}
+.place-card-stars { color: #f5a623; font-size: .85rem; letter-spacing: -.5px; }
+.place-card-avg   { font-size: .82rem; font-weight: 700; color: var(--text2, #555); }
+.place-card-count { font-size: .78rem; color: var(--text3, #999); }
+
+/* 뒤로 가기 */
+.place-back-btn {
+    background: none;
+    border: 1px solid var(--border2, #e0e0e0);
+    border-radius: 8px;
+    padding: 6px 14px;
+    font-size: .85rem;
+    cursor: pointer;
+    margin-bottom: 12px;
+    color: var(--text2, #555);
+    transition: background .12s;
+}
+.place-back-btn:hover { background: var(--surface2, #f5f5f5); }
+.place-back-title {
+    font-size: 1rem;
+    font-weight: 700;
+    margin-bottom: 6px;
+}
+
+/* ── 장소 후기 드릴다운 전체 래퍼 ── */
+.place-review-wrap {
+    background: #fff;
+    border-radius: 14px;
+    padding: 20px 18px 24px;
+    box-shadow: 0 1px 6px rgba(0,0,0,.07);
+}
+
+/* ── 평균 별점 헤더 (가운데 정렬, 크게) ── */
+.place-review-header {
+    text-align: center;
+    padding: 16px 0 20px;
+    margin-bottom: 18px;
+    border-bottom: 1px solid var(--border2, #eee);
+}
+.place-review-name {
+    font-size: 1rem;
+    font-weight: 700;
+    color: var(--text1, #222);
+    margin-bottom: 12px;
+}
+.place-avg-stars {
+    font-size: 2rem;
+    color: #f5a623;
+    letter-spacing: 3px;
+    display: block;
+    margin-bottom: 4px;
+}
+.place-avg-score {
+    font-size: 2.6rem;
+    font-weight: 800;
+    color: var(--text1, #111);
+    display: block;
+    line-height: 1.1;
+    margin-bottom: 4px;
+}
+.place-avg-count {
+    font-size: .85rem;
+    color: var(--text3, #999);
+    display: block;
+}
+
+/* ── 리뷰 목록 ── */
+.place-review-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+/* ── 개별 리뷰 카드 ── */
+.place-review-item {
+    background: #fafafa;
+    border: 1px solid var(--border2, #efefef);
+    border-radius: 10px;
+    padding: 14px 16px;
+}
+.pri-top {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 8px;
+}
+.pri-stars  { color: #f5a623; font-size: 1rem; }
+.pri-writer { font-size: .82rem; color: var(--text3, #888); }
+
+/* 한줄평 — 기본 2줄 클램프 */
+.pri-comment {
+    font-size: .9rem;
+    color: var(--text1, #333);
+    line-height: 1.55;
+    margin-bottom: 6px;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+.pri-comment.expanded {
+    display: block;
+    overflow: visible;
+    -webkit-line-clamp: unset;
+}
+.pri-toggle-btn {
+    background: none;
+    border: none;
+    padding: 0;
+    font-size: .8rem;
+    color: var(--primary, #4f8ef7);
+    cursor: pointer;
+    margin-bottom: 6px;
+    display: block;
+}
+.pri-toggle-btn:hover { text-decoration: underline; }
+
+/* 해당 후기로 이동 버튼 */
+.pri-goto {
+    display: inline-block;
+    margin-top: 4px;
+    padding: 4px 12px;
+    border: 1px solid var(--primary, #4f8ef7);
+    border-radius: 6px;
+    background: none;
+    font-size: .8rem;
+    color: var(--primary, #4f8ef7);
+    cursor: pointer;
+    transition: background .12s, color .12s;
+}
+.pri-goto:hover {
+    background: var(--primary, #4f8ef7);
+    color: #fff;
+}
