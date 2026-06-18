@@ -10,8 +10,12 @@ public record PostDetailResponseDto(
         Long postId,                 // 게시글 ID
         Long userId,                 // 작성자 ID
         String writerName,           // 작성자명
-        Long planId,                 // 연결된 여행 플랜 ID
 
+        String category,             // 게시글 카테고리: ROUTE, STAY, FOOD, TOUR, CAFE
+        String catLabel,             // 화면 표시용 카테고리명
+        String catClass,             // 화면 표시용 카테고리 CSS 클래스
+
+        Long planId,                 // 연결된 여행 플랜 ID
         String planTitle,            // 연결된 여행 플랜 제목
         String planDestination,      // 여행지
         String planStartDate,        // 여행 시작일
@@ -44,17 +48,40 @@ public record PostDetailResponseDto(
                 ? "탈퇴한 사용자"
                 : post.getUser().getName();
 
-        return
-                new PostDetailResponseDto(
+        String category = normalizeCategory(post.getCategory());
+
+        return new PostDetailResponseDto(
                 post.getId(),
                 post.getUser().getId(),
                 writerName,
+
+                category,
+                getCatLabel(category),
+                getCatClass(category),
+
                 post.getPlan() != null ? post.getPlan().getId() : null,
                 post.getPlan() != null ? post.getPlan().getTitle() : null,
                 post.getPlan() != null ? post.getPlan().getDestination() : null,
-                post.getPlan() != null && post.getPlan().getStartDate() != null ? post.getPlan().getStartDate().toString() : null,
-                post.getPlan() != null && post.getPlan().getEndDate() != null ? post.getPlan().getEndDate().toString() : null,
-                post.getPlan() != null ? post.getPlan().getRouteJson() : null, post.getPlan() != null && post.getPlan().getForm() != null ? post.getPlan().getForm().getCompanionCount() : null, post.getPlan() != null && post.getPlan().getForm() != null ? post.getPlan().getForm().getTravelStyles() : null, post.getPlan() != null && post.getPlan().getForm() != null ? post.getPlan().getForm().getTransportType() : null, post.getPlan() != null && post.getPlan().getForm() != null ? post.getPlan().getForm().getBudget() : null,
+                post.getPlan() != null && post.getPlan().getStartDate() != null
+                        ? post.getPlan().getStartDate().toString()
+                        : null,
+                post.getPlan() != null && post.getPlan().getEndDate() != null
+                        ? post.getPlan().getEndDate().toString()
+                        : null,
+                post.getPlan() != null ? post.getPlan().getRouteJson() : null,
+                post.getPlan() != null && post.getPlan().getForm() != null
+                        ? post.getPlan().getForm().getCompanionCount()
+                        : null,
+                post.getPlan() != null && post.getPlan().getForm() != null
+                        ? post.getPlan().getForm().getTravelStyles()
+                        : null,
+                post.getPlan() != null && post.getPlan().getForm() != null
+                        ? post.getPlan().getForm().getTransportType()
+                        : null,
+                post.getPlan() != null && post.getPlan().getForm() != null
+                        ? post.getPlan().getForm().getBudget()
+                        : null,
+
                 post.getTitle(),
                 post.getContent(),
                 post.getStyleTags(),
@@ -68,6 +95,41 @@ public record PostDetailResponseDto(
                 post.getCreatedAt(),
                 post.getUpdatedAt()
         );
+    }
+
+    private static String normalizeCategory(String category) {
+        if (category == null || category.isBlank()) {
+            return "ROUTE";
+        }
+
+        return switch (category) {
+            case "STAY" -> "STAY";
+            case "FOOD" -> "FOOD";
+            case "TOUR" -> "TOUR";
+            case "CAFE" -> "CAFE";
+            case "ROUTE" -> "ROUTE";
+            default -> "ROUTE";
+        };
+    }
+
+    private static String getCatLabel(String category) {
+        return switch (category) {
+            case "STAY" -> "숙소";
+            case "FOOD" -> "맛집";
+            case "TOUR" -> "관광지";
+            case "CAFE" -> "카페";
+            default -> "여행 경로";
+        };
+    }
+
+    private static String getCatClass(String category) {
+        return switch (category) {
+            case "STAY" -> "cat-stay";
+            case "FOOD" -> "cat-food";
+            case "TOUR" -> "cat-tour";
+            case "CAFE" -> "cat-cafe";
+            default -> "cat-route";
+        };
     }
 
     // 댓글 응답 정보
