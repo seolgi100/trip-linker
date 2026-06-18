@@ -28,4 +28,7 @@ public interface TravelPlanRepository extends JpaRepository<TravelPlan, Long> {
     @Modifying
     @Query("UPDATE TravelPlan t SET t.destination = :destination WHERE t.id = :tripId")
     void updateDestination(@Param("tripId") Long tripId, @Param("destination") String destination);
+
+    // TODO: 확정 기능 구현 후 PlaceService.parseAndSavePlacesFromAllPlans() 에서 사용
+    List<TravelPlan> findByStatus(String status);
 }
