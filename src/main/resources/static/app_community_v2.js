@@ -1780,6 +1780,13 @@
             <span>👁 ${escapeHtml(views)}</span>
             <span>❤️ ${escapeHtml(likes)}</span>
         `;
+
+        metaEl.style.display = 'inline-flex';
+        metaEl.style.alignItems = 'center';
+        metaEl.style.gap = '8px';
+        metaEl.style.lineHeight = '1.4';
+        metaEl.style.marginTop = '0';
+        metaEl.style.transform = 'translateY(0)';
     }
 
     function renderDetailCategory(post) {
@@ -2752,151 +2759,6 @@
 })();
 
 /* =============================================================================
- * community v2 - 좋아요/스크랩 버튼 상태 표시 + 토글 보정
- * 목적:
- * - 상세 진입 시 likedByMe/scrappedByMe에 따라 버튼을 민트색으로 채움
- * - 다시 누르면 취소되고 버튼 색상도 원래대로 복구
- * ============================================================================= */
-
-(function () {
-    'use strict';
-
-    const ACTIVE_COLOR = '#46B29E';
-
-    function getCurrentPostId() {
-        return window._currentPostId || window._openedPostId || null;
-    }
-
-    function setButtonActive(btn, active) {
-        if (!btn) return;
-
-        if (active) {
-            btn.classList.add('community-action-active');
-            btn.style.background = ACTIVE_COLOR;
-            btn.style.borderColor = ACTIVE_COLOR;
-            btn.style.color = '#fff';
-        } else {
-            btn.classList.remove('community-action-active');
-            btn.style.background = '';
-            btn.style.borderColor = '';
-            btn.style.color = '';
-        }
-    }
-
-    function getLikeButton() {
-        return [...document.querySelectorAll('button')]
-            .find(btn => btn.textContent && btn.textContent.includes('좋아요'));
-    }
-
-    function getScrapButton() {
-        return [...document.querySelectorAll('button')]
-            .find(btn => btn.textContent && btn.textContent.includes('스크랩'));
-    }
-
-    function applyCurrentPostActionState() {
-        const post = window._currentPostDetail;
-        if (!post) return;
-
-        const likeBtn = getLikeButton();
-        const scrapBtn = getScrapButton();
-
-        setButtonActive(likeBtn, !!post.likedByMe);
-        setButtonActive(scrapBtn, !!post.scrappedByMe);
-    }
-
-    const prevOpenPostDetailForActionState = window.openPostDetail;
-
-    if (typeof prevOpenPostDetailForActionState === 'function' && !prevOpenPostDetailForActionState.__communityActionStateWrapped) {
-        window.openPostDetail = async function (postId) {
-            const result = await prevOpenPostDetailForActionState.apply(this, arguments);
-
-            setTimeout(applyCurrentPostActionState, 80);
-
-            return result;
-        };
-
-        window.openPostDetail.__communityActionStateWrapped = true;
-    }
-
-    window.doReviewLike = async function () {
-        if (typeof Token === 'undefined' || !Token.getAccess || !Token.getAccess()) {
-            if (typeof toast === 'function') toast('로그인이 필요합니다.');
-            if (typeof go === 'function') go('login');
-            return;
-        }
-
-        const postId = getCurrentPostId();
-
-        if (!postId) {
-            if (typeof toast === 'function') toast('게시글 정보를 찾을 수 없습니다.');
-            return;
-        }
-
-        const res = await api.post(`/api/posts/${postId}/likes`, {});
-
-        if (!res || res.success === false) {
-            if (typeof toast === 'function') toast(res?.message || '좋아요 처리에 실패했습니다.');
-            return;
-        }
-
-        const liked = res.data === true;
-
-        if (window._currentPostDetail) {
-            window._currentPostDetail.likedByMe = liked;
-
-            const currentCount =
-                Number(window._currentPostDetail.likeCount ?? window._currentPostDetail.likes ?? 0);
-
-            window._currentPostDetail.likeCount = liked
-                ? currentCount + 1
-                : Math.max(0, currentCount - 1);
-        }
-
-        if (typeof toast === 'function') {
-            toast(liked ? '좋아요를 눌렀습니다.' : '좋아요를 취소했습니다.');
-        }
-
-        await window.openPostDetail(postId);
-    };
-
-    window.doReviewScrap = async function () {
-        if (typeof Token === 'undefined' || !Token.getAccess || !Token.getAccess()) {
-            if (typeof toast === 'function') toast('로그인이 필요합니다.');
-            if (typeof go === 'function') go('login');
-            return;
-        }
-
-        const postId = getCurrentPostId();
-
-        if (!postId) {
-            if (typeof toast === 'function') toast('게시글 정보를 찾을 수 없습니다.');
-            return;
-        }
-
-        const category = window._currentPostCategory || window._currentPostDetail?.category || 'ROUTE';
-
-        const res = await api.post(`/api/posts/${postId}/scraps?category=${category}`, {});
-
-        if (!res || res.success === false) {
-            if (typeof toast === 'function') toast(res?.message || '스크랩 처리에 실패했습니다.');
-            return;
-        }
-
-        const scrapped = res.data === true;
-
-        if (window._currentPostDetail) {
-            window._currentPostDetail.scrappedByMe = scrapped;
-        }
-
-        if (typeof toast === 'function') {
-            toast(scrapped ? '스크랩했습니다.' : '스크랩을 취소했습니다.');
-        }
-
-        await window.openPostDetail(postId);
-    };
-})();
-
-/* =============================================================================
  * community v2 - 마이페이지 작성 후기 수정/삭제 실제 API 연결
  * app_main.js 수정 금지 → 여기서 window 함수 덮어쓰기
  * ============================================================================= */
@@ -3128,130 +2990,6 @@
             }
         }, 700);
     });
-})();
-
-/* =============================================================================
- * community v2 - 좋아요/스크랩 버튼 색상 유지
- * ============================================================================= */
-(function () {
-    'use strict';
-
-    const ACTIVE_COLOR = '#46B29E';
-
-    function getCurrentPostId() {
-        return window._currentPostId
-            || window._openedPostId
-            || window._currentPostDetail?.postId
-            || window._currentPostDetail?.id
-            || null;
-    }
-
-    function findActionButton(keyword) {
-        return [...document.querySelectorAll('#page-review button, #page-review .btn-f, #page-review .btn-scrap')]
-            .find(function (btn) {
-                return (btn.textContent || '').includes(keyword);
-            });
-    }
-
-    function setButtonState(btn, active) {
-        if (!btn) return;
-
-        if (active) {
-            btn.classList.add('community-action-active');
-            btn.style.background = ACTIVE_COLOR;
-            btn.style.borderColor = ACTIVE_COLOR;
-            btn.style.color = '#fff';
-        } else {
-            btn.classList.remove('community-action-active');
-            btn.style.background = '';
-            btn.style.borderColor = '';
-            btn.style.color = '';
-        }
-    }
-
-    function applyActionState() {
-        const post = window._currentPostDetail;
-        if (!post) return;
-
-        setButtonState(findActionButton('좋아요'), !!post.likedByMe);
-        setButtonState(findActionButton('스크랩'), !!post.scrappedByMe);
-    }
-
-    const prevOpenPostDetailForAction = window.openPostDetail;
-
-    if (typeof prevOpenPostDetailForAction === 'function' && !prevOpenPostDetailForAction.__communityActionStateWrapped) {
-        window.openPostDetail = async function (postId) {
-            const result = await prevOpenPostDetailForAction.apply(this, arguments);
-
-            setTimeout(applyActionState, 50);
-            setTimeout(applyActionState, 300);
-            setTimeout(applyActionState, 800);
-
-            return result;
-        };
-
-        window.openPostDetail.__communityActionStateWrapped = true;
-    }
-
-    window.doReviewLike = async function () {
-        if (typeof Token !== 'undefined' && Token.getAccess && !Token.getAccess()) {
-            if (typeof toast === 'function') toast('로그인이 필요합니다.');
-            if (typeof go === 'function') go('login');
-            return;
-        }
-
-        const postId = getCurrentPostId();
-
-        if (!postId) {
-            if (typeof toast === 'function') toast('게시글 정보를 찾을 수 없습니다.');
-            return;
-        }
-
-        const res = await api.post('/api/posts/' + postId + '/likes', {});
-        const liked = res?.data === true;
-
-        if (window._currentPostDetail) {
-            window._currentPostDetail.likedByMe = liked;
-        }
-
-        if (typeof toast === 'function') {
-            toast(liked ? '좋아요를 눌렀습니다.' : '좋아요를 취소했습니다.');
-        }
-
-        await window.openPostDetail(postId);
-        setTimeout(applyActionState, 100);
-    };
-
-    window.doReviewScrap = async function () {
-        if (typeof Token !== 'undefined' && Token.getAccess && !Token.getAccess()) {
-            if (typeof toast === 'function') toast('로그인이 필요합니다.');
-            if (typeof go === 'function') go('login');
-            return;
-        }
-
-        const postId = getCurrentPostId();
-
-        if (!postId) {
-            if (typeof toast === 'function') toast('게시글 정보를 찾을 수 없습니다.');
-            return;
-        }
-
-        const category = window._currentPostCategory || window._currentPostDetail?.category || 'ROUTE';
-
-        const res = await api.post('/api/posts/' + postId + '/scraps?category=' + category, {});
-        const scrapped = res?.data === true;
-
-        if (window._currentPostDetail) {
-            window._currentPostDetail.scrappedByMe = scrapped;
-        }
-
-        if (typeof toast === 'function') {
-            toast(scrapped ? '스크랩했습니다.' : '스크랩을 취소했습니다.');
-        }
-
-        await window.openPostDetail(postId);
-        setTimeout(applyActionState, 100);
-    };
 })();
 
 /* =============================================================================
@@ -4598,38 +4336,52 @@
      * 미리보기 모달 - 해당 경로로 여행 계획하기
      * 현재는 실제 planId를 저장한 뒤 map으로 이동한다.
      */
-    window.addCurrentPreviewPlanToMyTrips = function () {
-        if (!requireLogin()) return;
-
-        const post = getCurrentPostForAction();
+    window.addCurrentPreviewPlanToMyTrips = async function () {
+        const post = window._currentPostDetail;
 
         if (!post || !post.planId) {
-            if (typeof toast === 'function') toast('연결된 여행 계획을 찾을 수 없습니다.');
+            if (typeof toast === 'function') {
+                toast('연결된 여행 계획을 찾을 수 없습니다.');
+            }
             return;
         }
 
-        sessionStorage.setItem('selectedPlanId', String(post.planId));
-        sessionStorage.setItem('communityPreviewPlanId', String(post.planId));
+        const planId = String(post.planId);
+
+        window._currentTripId = Number(planId);
+
+        sessionStorage.setItem('plannerDraftId', planId);
+        sessionStorage.setItem('selectedPlanId', planId);
+        sessionStorage.setItem('communityPreviewPlanId', planId);
         sessionStorage.setItem('communityPreviewPostId', String(post.postId || ''));
 
-        window._currentTripId = Number(post.planId);
+        sessionStorage.removeItem('ai_generated_route');
+        sessionStorage.removeItem('aiRouteDraft');
+        sessionStorage.removeItem('plannerDraft');
 
         if (typeof closeCommunityPlanPreview === 'function') {
             closeCommunityPlanPreview();
         }
 
         if (typeof toast === 'function') {
-            toast('경로가 추가되었습니다.');
+            toast('해당 경로를 불러왔습니다.');
         }
 
-        /*
-         * map 화면 자체가 아직 더미 기반이면 제목/경로까지 완전히 바꾸려면
-         * map 쪽 렌더 함수가 selectedPlanId를 읽도록 별도 연결이 필요하다.
-         * 여기서는 우선 실제 planId를 저장하고 이동만 담당한다.
-         */
         if (typeof go === 'function') {
             go('map');
         }
+
+        setTimeout(function () {
+            if (typeof initMapPage === 'function') {
+                initMapPage();
+            }
+        }, 100);
+
+        setTimeout(function () {
+            if (typeof initMapPage === 'function') {
+                initMapPage();
+            }
+        }, 500);
     };
 
     /*
@@ -4934,52 +4686,61 @@
      * - 토스트: 내 여행기록에 추가되었습니다
      */
     window.addCurrentPreviewPlanToMyTrips = async function () {
-        if (!requireLogin()) return;
-
-        const post = getCurrentPostForAction();
+        const post = window._currentPostDetail;
 
         if (!post || !post.planId) {
-            if (typeof toast === 'function') toast('연결된 여행 계획을 찾을 수 없습니다.');
+            if (typeof toast === 'function') {
+                toast('연결된 여행 계획을 찾을 수 없습니다.');
+            }
             return;
         }
 
-        addPostPlanToLocalTrips(post);
+        const planId = String(post.planId);
 
-        sessionStorage.setItem('plannerDraftId', String(post.planId));
-        sessionStorage.setItem('selectedPlanId', String(post.planId));
-        sessionStorage.setItem('communityPreviewPlanId', String(post.planId));
+        /*
+         * map/detail 페이지가 이 planId를 기준으로 실제 경로를 불러오도록 저장
+         */
+        window._currentTripId = Number(planId);
+
+        sessionStorage.setItem('plannerDraftId', planId);
+        sessionStorage.setItem('selectedPlanId', planId);
+        sessionStorage.setItem('communityPreviewPlanId', planId);
         sessionStorage.setItem('communityPreviewPostId', String(post.postId || ''));
 
-        window._currentTripId = Number(post.planId);
+        /*
+         * 예전 AI/더미 경로가 남아 있으면 제주 더미가 다시 뜰 수 있으므로 제거
+         */
+        sessionStorage.removeItem('ai_generated_route');
+        sessionStorage.removeItem('aiRouteDraft');
+        sessionStorage.removeItem('plannerDraft');
 
         if (typeof closeCommunityPlanPreview === 'function') {
             closeCommunityPlanPreview();
         }
 
-        wrapRenderMyTrips();
-
-        if (typeof go === 'function') {
-            go('mypage');
+        if (typeof toast === 'function') {
+            toast('해당 경로를 불러왔습니다.');
         }
 
-        setTimeout(function () {
-            wrapRenderMyTrips();
+        /*
+         * 마이페이지가 아니라 실제 경로 상세/지도 페이지로 이동
+         */
+        if (typeof go === 'function') {
+            go('map');
+        }
 
-            if (typeof updateMyPageUI === 'function') {
-                updateMyPageUI();
+        /*
+         * map 페이지가 이미 떠 있는 상태에서 이동하면 initMapPage가 자동 실행 안 될 수 있어서 강제 재호출
+         */
+        setTimeout(function () {
+            if (typeof initMapPage === 'function') {
+                initMapPage();
             }
         }, 100);
 
         setTimeout(function () {
-            const tripsBtn = [...document.querySelectorAll('#page-mypage .my-menu')]
-                .find(btn => (btn.textContent || '').includes('내 여행 기록'));
-
-            if (typeof showMySection === 'function' && tripsBtn) {
-                showMySection('trips', tripsBtn);
-            }
-
-            if (typeof toast === 'function') {
-                toast('내 여행기록에 추가되었습니다.');
+            if (typeof initMapPage === 'function') {
+                initMapPage();
             }
         }, 500);
     };
@@ -5149,4 +4910,229 @@
     setTimeout(wrapRenderMyTrips, 300);
     setTimeout(wrapShowMySection, 300);
     setTimeout(bindCommunityPreviewButtons, 500);
+})();
+
+/* =============================================================================
+ * community v2 - 상세 버튼 색상 강제 제거 + 메타 정렬 보정
+ * 목적:
+ * - 좋아요/스크랩 버튼을 강제로 민트색으로 채우지 않음
+ * - 기존 CSS hover 효과만 유지
+ * - 상세 메타(작성자·날짜·조회수·좋아요) 세로 정렬 보정
+ * ============================================================================= */
+(function () {
+    'use strict';
+
+    function getCurrentPostIdSafe() {
+        return window._currentPostId
+            || window._openedPostId
+            || window._currentPostDetail?.postId
+            || window._currentPostDetail?.id
+            || null;
+    }
+
+    function getCurrentCategorySafe() {
+        return window._currentPostCategory
+            || window._currentPostDetail?.category
+            || 'ROUTE';
+    }
+
+    function isLoggedInSafe() {
+        return typeof Token !== 'undefined'
+            && Token.getAccess
+            && Token.getAccess();
+    }
+
+    function normalizeDetailActionButtons() {
+        const page =
+            document.getElementById('page-review') ||
+            document;
+
+        const buttons = [...page.querySelectorAll('button')];
+
+        buttons.forEach(btn => {
+            const text = (btn.textContent || '').trim();
+            const onclick = btn.getAttribute('onclick') || '';
+
+            const isLike =
+                onclick.includes('doReviewLike') ||
+                text.includes('좋아요');
+
+            const isScrap =
+                onclick.includes('doReviewScrap') ||
+                text.includes('스크랩');
+
+            if (!isLike && !isScrap) return;
+
+            /*
+             * 강제 활성화 스타일만 제거한다.
+             * 버튼 텍스트는 건드리지 않는다.
+             * 기존 CSS hover 효과는 그대로 유지된다.
+             */
+            btn.classList.remove('community-action-active');
+            btn.classList.remove('active');
+            btn.classList.remove('on');
+
+            btn.style.removeProperty('background');
+            btn.style.removeProperty('background-color');
+            btn.style.removeProperty('color');
+            btn.style.removeProperty('border-color');
+            btn.style.removeProperty('box-shadow');
+            btn.style.removeProperty('transform');
+        });
+    }
+
+    function normalizeDetailMetaPosition() {
+        const meta = document.getElementById('pr-meta');
+
+        if (!meta) return;
+
+        meta.style.display = 'inline-flex';
+        meta.style.alignItems = 'center';
+        meta.style.gap = '8px';
+        meta.style.lineHeight = '1.4';
+        meta.style.marginTop = '0';
+        meta.style.paddingTop = '0';
+        meta.style.position = 'relative';
+        meta.style.top = '3px';
+        meta.style.transform = 'none';
+        meta.style.verticalAlign = 'middle';
+
+        [...meta.querySelectorAll('span')].forEach(span => {
+            span.style.display = 'inline-flex';
+            span.style.alignItems = 'center';
+            span.style.lineHeight = '1.4';
+            span.style.marginTop = '0';
+            span.style.transform = 'none';
+        });
+
+        const authorAv = document.getElementById('pr-author-av');
+        if (authorAv) {
+            authorAv.style.transform = 'none';
+            authorAv.style.marginTop = '0';
+            authorAv.style.position = 'relative';
+            authorAv.style.top = '2px';
+        }
+
+        const authorName = document.getElementById('pr-author-name');
+        if (authorName) {
+            authorName.style.transform = 'none';
+            authorName.style.marginTop = '0';
+            authorName.style.lineHeight = '1.4';
+            authorName.style.position = 'relative';
+            authorName.style.top = '2px';
+        }
+    }
+
+    function normalizeDetailHeaderUI() {
+        normalizeDetailActionButtons();
+        normalizeDetailMetaPosition();
+    }
+
+    /*
+     * 상세 열릴 때마다 보정
+     */
+    const prevOpenPostDetailForCleanButtons = window.openPostDetail;
+
+    if (
+        typeof prevOpenPostDetailForCleanButtons === 'function' &&
+        !prevOpenPostDetailForCleanButtons.__cleanActionButtonWrapped
+    ) {
+        window.openPostDetail = async function (postId) {
+            const result = await prevOpenPostDetailForCleanButtons.apply(this, arguments);
+
+            setTimeout(normalizeDetailHeaderUI, 50);
+            setTimeout(normalizeDetailHeaderUI, 200);
+            setTimeout(normalizeDetailHeaderUI, 500);
+
+            return result;
+        };
+
+        window.openPostDetail.__cleanActionButtonWrapped = true;
+    }
+
+    /*
+     * 좋아요 클릭
+     * - 버튼 색상 직접 변경 없음
+     * - 토스트 + 상세 재조회만 수행
+     */
+    window.doReviewLike = async function () {
+        if (!isLoggedInSafe()) {
+            if (typeof toast === 'function') toast('로그인이 필요합니다.');
+            if (typeof go === 'function') go('login');
+            return;
+        }
+
+        const postId = getCurrentPostIdSafe();
+
+        if (!postId) {
+            if (typeof toast === 'function') toast('게시글 정보를 찾을 수 없습니다.');
+            return;
+        }
+
+        try {
+            const res = await api.post('/api/posts/' + postId + '/likes', {});
+
+            if (res && res.success === false) {
+                if (typeof toast === 'function') {
+                    toast(res.message || '좋아요 처리에 실패했습니다.');
+                }
+                return;
+            }
+
+            if (typeof toast === 'function') {
+                toast(res?.data === false ? '좋아요를 취소했습니다.' : '좋아요를 눌렀습니다.');
+            }
+
+            await window.openPostDetail(postId);
+            setTimeout(normalizeDetailHeaderUI, 100);
+        } catch (e) {
+            console.error('[community-v2] 좋아요 실패:', e);
+            if (typeof toast === 'function') toast('좋아요 처리에 실패했습니다.');
+        }
+    };
+
+    /*
+     * 스크랩 클릭
+     * - 버튼 색상 직접 변경 없음
+     * - 토스트 + 상세 재조회만 수행
+     */
+    window.doReviewScrap = async function () {
+        if (!isLoggedInSafe()) {
+            if (typeof toast === 'function') toast('로그인이 필요합니다.');
+            if (typeof go === 'function') go('login');
+            return;
+        }
+
+        const postId = getCurrentPostIdSafe();
+
+        if (!postId) {
+            if (typeof toast === 'function') toast('게시글 정보를 찾을 수 없습니다.');
+            return;
+        }
+
+        const category = getCurrentCategorySafe();
+
+        try {
+            const res = await api.post('/api/posts/' + postId + '/scraps?category=' + category, {});
+
+            if (res && res.success === false) {
+                if (typeof toast === 'function') {
+                    toast(res.message || '스크랩 처리에 실패했습니다.');
+                }
+                return;
+            }
+
+            if (typeof toast === 'function') {
+                toast(res?.data === false ? '스크랩을 취소했습니다.' : '스크랩했습니다.');
+            }
+
+            await window.openPostDetail(postId);
+            setTimeout(normalizeDetailHeaderUI, 100);
+        } catch (e) {
+            console.error('[community-v2] 스크랩 실패:', e);
+            if (typeof toast === 'function') toast('스크랩 처리에 실패했습니다.');
+        }
+    };
+
+    setTimeout(normalizeDetailHeaderUI, 500);
 })();
