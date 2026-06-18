@@ -6,6 +6,7 @@ import idusw.sbb.triplinker.domain.place.entity.Place;
 import idusw.sbb.triplinker.domain.place.service.PlaceService;
 import idusw.sbb.triplinker.domain.post.dto.PlaceReviewResponseDto;
 import idusw.sbb.triplinker.domain.post.dto.PlaceReviewSaveDto;
+import idusw.sbb.triplinker.domain.post.dto.PlaceReviewUpdateDto;
 import idusw.sbb.triplinker.domain.post.dto.PostDetailResponseDto;
 import idusw.sbb.triplinker.domain.post.dto.PostListResponseDto;
 import idusw.sbb.triplinker.domain.post.dto.PostWriteDto;
@@ -401,6 +402,26 @@ public class PostService {
                     .rating(Math.max(1, Math.min(5, item.getRating())))
                     .comment(item.getComment() != null ? item.getComment().trim() : null)
                     .build());
+        });
+    }
+
+    // 장소 리뷰 수정 (별점·한줄평만 변경, 장소 연결은 유지)
+    @Transactional
+    public void updatePlaceReviews(Long userId, Long postId, PlaceReviewUpdateDto dto) {
+        if (dto == null || dto.getReviews() == null || dto.getReviews().isEmpty()) return;
+
+        Post post = postRepository.findById(postId)
+                .orElseThrow(() -> new IllegalArgumentException("게시글을 찾을 수 없습니다."));
+        if (!post.getUser().getId().equals(userId)) {
+            throw new IllegalArgumentException("본인이 작성한 게시글만 수정할 수 있습니다.");
+        }
+
+        dto.getReviews().forEach(item -> {
+            if (item.getPlaceReviewId() == null || item.getRating() < 1) return;
+            placeReviewRepository.findById(item.getPlaceReviewId()).ifPresent(pr -> {
+                if (!pr.getPost().getId().equals(postId)) return; // 다른 게시글 리뷰 변조 방지
+                pr.update(item.getRating(), item.getComment());
+            });
         });
     }
 

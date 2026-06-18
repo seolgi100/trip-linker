@@ -3,6 +3,7 @@ package idusw.sbb.triplinker.domain.post.controller;
 import idusw.sbb.triplinker.domain.auth.security.CustomUserDetails;
 import idusw.sbb.triplinker.domain.post.dto.PlaceReviewResponseDto;
 import idusw.sbb.triplinker.domain.post.dto.PlaceReviewSaveDto;
+import idusw.sbb.triplinker.domain.post.dto.PlaceReviewUpdateDto;
 import idusw.sbb.triplinker.domain.post.dto.PostDetailResponseDto;
 import idusw.sbb.triplinker.domain.post.dto.PostListResponseDto;
 import idusw.sbb.triplinker.domain.post.dto.PostWriteDto;
@@ -219,5 +220,16 @@ public class PostController {
         return ResponseEntity.ok(
                 ApiResponse.success("장소 리뷰 조회 성공", postService.getPlaceReviewsByPost(postId))
         );
+    }
+
+    // 장소 리뷰 수정 (별점·한줄평)
+    @PatchMapping("/{postId}/place-reviews")
+    public ResponseEntity<Void> updatePlaceReviews(
+            @AuthenticationPrincipal CustomUserDetails userDetails,
+            @PathVariable Long postId,
+            @RequestBody PlaceReviewUpdateDto dto
+    ) {
+        postService.updatePlaceReviews(userDetails.getUserId(), postId, dto);
+        return ResponseEntity.ok().build();
     }
 }

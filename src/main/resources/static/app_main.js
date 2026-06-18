@@ -626,12 +626,36 @@ async function _renderMyReviews() {
       <div class="post-foot">
         <div class="post-stats"><span class="post-stat">❤️ ${r.likes}</span>${r.views ? `<span class="post-stat">👁 ${r.views}</span>` : ''}</div>
         <div style="display:flex;gap:6px">
-          <button class="btn-scrap" onclick="event.stopPropagation();go('edit-review')">✏️ 수정</button>
-          <button class="btn-scrap" style="color:var(--coral);border-color:var(--coral)" onclick="event.stopPropagation();if(confirm('삭제?'))toast('삭제 완료')">삭제</button>
+          <button class="btn-scrap" onclick="event.stopPropagation();openMyReviewEdit(${r.postId})">✏️ 수정</button>
+          <button class="btn-scrap" style="color:var(--coral);border-color:var(--coral)" onclick="event.stopPropagation();deleteMyPost(${r.postId})">삭제</button>
         </div>
       </div>
     </div>
   `).join('');
+}
+
+/** 마이페이지 후기 수정 진입 — 상세 데이터 로드 후 편집 페이지로 이동 */
+async function openMyReviewEdit(postId) {
+  window._currentPostId  = postId;
+  window._openedPostId   = postId;
+
+  // 편집에 필요한 상세 데이터를 미리 불러와 _currentPostDetail 세팅
+  try {
+    const res = await api.get(`/api/posts/${postId}`);
+    if (res && res.data) {
+      window._currentPostDetail = res.data;
+    }
+  } catch (e) {
+    toast('후기 정보를 불러오지 못했습니다.');
+    return;
+  }
+
+  // page_place.html 의 goEditReview() 호출
+  if (typeof goEditReview === 'function') {
+    goEditReview();
+  } else {
+    go('edit-review');
+  }
 }
 
 /** [v2] GET /api/users/me/liked-posts → 좋아요한 후기 */

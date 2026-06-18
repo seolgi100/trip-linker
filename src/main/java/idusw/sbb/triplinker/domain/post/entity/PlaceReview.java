@@ -50,4 +50,9 @@ public class PlaceReview {
         this.rating  = rating;
         this.comment = comment;
     }
+
+    public void update(int rating, String comment) {
+        this.rating  = Math.max(1, Math.min(5, rating));
+        this.comment = comment != null ? comment.trim() : null;
+    }
 }
