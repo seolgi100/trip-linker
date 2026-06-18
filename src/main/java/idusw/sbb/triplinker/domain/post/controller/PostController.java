@@ -84,6 +84,24 @@ public class PostController {
         );
     }
 
+    // 커뮤니티 - 게시글 수정
+    @PatchMapping("/{postId}")
+    public ResponseEntity<ApiResponse<Long>> updatePost(
+            @AuthenticationPrincipal CustomUserDetails userDetails,
+            @PathVariable Long postId,
+            @RequestBody PostWriteDto dto
+    ) {
+        Long updatedPostId = postService.updatePost(
+                userDetails.getUserId(),
+                postId,
+                dto
+        );
+
+        return ResponseEntity.ok(
+                ApiResponse.success("게시글이 수정되었습니다.", updatedPostId)
+        );
+    }
+
     // 커뮤니티 - 게시글 삭제
     @DeleteMapping("/{postId}")
     public ResponseEntity<Void> deletePost(
@@ -113,45 +131,41 @@ public class PostController {
         return ResponseEntity.ok(commentId);
     }
 
-    // 커뮤니티 - 좋아요 등록
+    // 커뮤니티 - 좋아요 토글
     @PostMapping("/{postId}/likes")
-    public ResponseEntity<Void> likePost(
+    public ResponseEntity<ApiResponse<Boolean>> toggleLikePost(
             @AuthenticationPrincipal CustomUserDetails userDetails,
             @PathVariable Long postId
     ) {
-        postService.likePost(userDetails.getUserId(), postId);
-        return ResponseEntity.ok().build();
+        boolean liked = postService.toggleLikePost(userDetails.getUserId(), postId);
+
+        return ResponseEntity.ok(
+                ApiResponse.success(
+                        liked ? "좋아요를 눌렀습니다." : "좋아요를 취소했습니다.",
+                        liked
+                )
+        );
     }
 
-    // 커뮤니티 - 좋아요 취소
-    @DeleteMapping("/{postId}/likes")
-    public ResponseEntity<Void> unlikePost(
-            @AuthenticationPrincipal CustomUserDetails userDetails,
-            @PathVariable Long postId
-    ) {
-        postService.unlikePost(userDetails.getUserId(), postId);
-        return ResponseEntity.ok().build();
-    }
-
-    // 커뮤니티 - 게시글 스크랩 등록
+    // 커뮤니티 - 게시글 스크랩 토글
     @PostMapping("/{postId}/scraps")
-    public ResponseEntity<Void> scrapPost(
+    public ResponseEntity<ApiResponse<Boolean>> toggleScrapPost(
             @AuthenticationPrincipal CustomUserDetails userDetails,
             @PathVariable Long postId,
             @RequestParam(required = false, defaultValue = "ROUTE") String category
     ) {
-        postService.scrapPost(userDetails.getUserId(), postId, category);
-        return ResponseEntity.ok().build();
-    }
+        boolean scrapped = postService.toggleScrapPost(
+                userDetails.getUserId(),
+                postId,
+                category
+        );
 
-    // 커뮤니티 - 게시글 스크랩 취소
-    @DeleteMapping("/{postId}/scraps")
-    public ResponseEntity<Void> cancelScrap(
-            @AuthenticationPrincipal CustomUserDetails userDetails,
-            @PathVariable Long postId
-    ) {
-        postService.cancelScrap(userDetails.getUserId(), postId);
-        return ResponseEntity.ok().build();
+        return ResponseEntity.ok(
+                ApiResponse.success(
+                        scrapped ? "스크랩했습니다." : "스크랩을 취소했습니다.",
+                        scrapped
+                )
+        );
     }
 
     // 커뮤니티 - 게시글 신고 접수

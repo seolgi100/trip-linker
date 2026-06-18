@@ -173,6 +173,27 @@ public class PostService {
         post.delete();
     }
 
+    // 커뮤니티 - 게시글 수정
+    @Transactional
+    public Long updatePost(Long userId, Long postId, PostWriteDto dto) {
+        Post post = postRepository.findById(postId)
+                .orElseThrow(() -> new IllegalArgumentException("게시글을 찾을 수 없습니다."));
+
+        if (post.getUser() == null || !post.getUser().getId().equals(userId)) {
+            throw new IllegalArgumentException("본인이 작성한 게시글만 수정할 수 있습니다.");
+        }
+
+        post.update(
+                dto.getTitle(),
+                dto.getContent(),
+                dto.getStyleTags(),
+                dto.getCategory(),
+                dto.isPublic()
+        );
+
+        return post.getId();
+    }
+
     // 커뮤니티 - 댓글 작성
     @Transactional
     public Long addComment(Long userId, Long postId, PostWriteDto dto) {
@@ -224,6 +245,33 @@ public class PostService {
                 });
     }
 
+    // 커뮤니티 - 좋아요 토글
+    @Transactional
+    public boolean toggleLikePost(Long userId, Long postId) {
+        Post post = postRepository.findById(postId)
+                .orElseThrow(() -> new IllegalArgumentException("게시글을 찾을 수 없습니다."));
+
+        return postLikeRepository.findByUserIdAndPostId(userId, postId)
+                .map(postLike -> {
+                    postLikeRepository.delete(postLike);
+                    post.decreaseLikeCount();
+                    return false; // 좋아요 취소됨
+                })
+                .orElseGet(() -> {
+                    User user = userRepository.findById(userId)
+                            .orElseThrow(() -> new IllegalArgumentException("해당 유저를 찾을 수 없습니다."));
+
+                    PostLike postLike = PostLike.builder()
+                            .user(user)
+                            .post(post)
+                            .build();
+
+                    postLikeRepository.save(postLike);
+                    post.increaseLikeCount();
+                    return true; // 좋아요 등록됨
+                });
+    }
+
     // 커뮤니티 - 게시글 스크랩 등록
     @Transactional
     public void scrapPost(Long userId, Long postId, String category) {
@@ -253,6 +301,34 @@ public class PostService {
     public void cancelScrap(Long userId, Long postId) {
         postScrapRepository.findByUserIdAndPostId(userId, postId)
                 .ifPresent(postScrapRepository::delete);
+    }
+
+    // 커뮤니티 - 스크랩 토글
+    @Transactional
+    public boolean toggleScrapPost(Long userId, Long postId, String category) {
+        Post post = postRepository.findById(postId)
+                .orElseThrow(() -> new IllegalArgumentException("게시글을 찾을 수 없습니다."));
+
+        return postScrapRepository.findByUserIdAndPostId(userId, postId)
+                .map(postScrap -> {
+                    postScrapRepository.delete(postScrap);
+                    return false; // 스크랩 취소됨
+                })
+                .orElseGet(() -> {
+                    User user = userRepository.findById(userId)
+                            .orElseThrow(() -> new IllegalArgumentException("해당 유저를 찾을 수 없습니다."));
+
+                    String scrapCategory = (category == null || category.isBlank()) ? "ROUTE" : category;
+
+                    PostScrap postScrap = PostScrap.builder()
+                            .user(user)
+                            .post(post)
+                            .category(scrapCategory)
+                            .build();
+
+                    postScrapRepository.save(postScrap);
+                    return true; // 스크랩 등록됨
+                });
     }
 
     // 커뮤니티 - 댓글 목록 조회

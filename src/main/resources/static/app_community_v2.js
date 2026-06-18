@@ -1869,13 +1869,6 @@
                             <strong>${escapeHtml(p.name)}</strong>
                             <span>
                                 ${escapeHtml(getPlaceShortType(p.type))}
-                                &gt;
-                                <button type="button"
-                                        class="review-place-view-btn"
-                                        data-place-name="${escapeHtml(p.name)}"
-                                        data-place-type="${escapeHtml(p.type || 'tour')}">
-                                    전체보기
-                                </button>
                             </span>
                         </div>
 
@@ -1886,20 +1879,6 @@
                 `).join('')}
             </div>
         `;
-
-        placeList.querySelectorAll('.review-place-view-btn').forEach(btn => {
-            btn.addEventListener('click', function (e) {
-                e.preventDefault();
-                e.stopPropagation();
-
-                const name = this.dataset.placeName;
-                const type = this.dataset.placeType || 'tour';
-
-                if (typeof window.openCommunityPlaceSummary === 'function') {
-                    window.openCommunityPlaceSummary(name, type);
-                }
-            });
-        });
     }
 
     window.openCommunityPlaceSummary = function (placeName, placeType) {
@@ -2431,284 +2410,6 @@
 })();
 
 /* =============================================================================
- * community v2 - 장소형 상세 화면 분기
- * 목적:
- * - ROUTE 게시글은 기존 여행 경로 상세 유지
- * - STAY / FOOD / TOUR / CAFE 게시글은 장소형 상세 화면으로 보정
- * - 기존 상세 렌더링 코드를 직접 수정하지 않고 마지막 단계에서 덮어쓰기
- * ============================================================================= */
-
-(function () {
-    'use strict';
-
-    function escapeHtml(value) {
-        return String(value ?? '')
-            .replaceAll('&', '&amp;')
-            .replaceAll('<', '&lt;')
-            .replaceAll('>', '&gt;')
-            .replaceAll('"', '&quot;')
-            .replaceAll("'", '&#039;');
-    }
-
-    function parseStyleTags(styleTags) {
-        if (!styleTags) return [];
-
-        if (Array.isArray(styleTags)) {
-            return styleTags.map(v => String(v).trim()).filter(Boolean);
-        }
-
-        try {
-            const parsed = JSON.parse(styleTags);
-            if (Array.isArray(parsed)) {
-                return parsed.map(v => String(v).trim()).filter(Boolean);
-            }
-        } catch (e) {
-            // JSON 문자열이 아니면 쉼표 문자열로 처리
-        }
-
-        return String(styleTags)
-            .split(',')
-            .map(v => v.trim())
-            .filter(Boolean);
-    }
-
-    function normalizeCategory(category) {
-        if (!category || String(category).trim() === '') return 'ROUTE';
-
-        const value = String(category).toUpperCase();
-
-        if (['ROUTE', 'STAY', 'FOOD', 'TOUR', 'CAFE'].includes(value)) {
-            return value;
-        }
-
-        return 'ROUTE';
-    }
-
-    function getCategoryInfo(category) {
-        const map = {
-            STAY: {
-                label: '숙소',
-                icon: '🏨',
-                typeLabel: '숙소 유형',
-                typeValue: '감성 숙소',
-                priceLabel: '1박 예상 가격',
-                priceValue: '₩80,000~',
-                scoreLabel: '숙박 만족도',
-                pointTitle: '숙소 이용 포인트',
-                reviewTitle: '숙소 방문 후기'
-            },
-            FOOD: {
-                label: '맛집',
-                icon: '🍽',
-                typeLabel: '음식 종류',
-                typeValue: '로컬 맛집',
-                priceLabel: '1인 예상 가격',
-                priceValue: '₩12,000~',
-                scoreLabel: '맛 만족도',
-                pointTitle: '맛집 이용 포인트',
-                reviewTitle: '맛집 방문 후기'
-            },
-            TOUR: {
-                label: '관광지',
-                icon: '📍',
-                typeLabel: '관광지 유형',
-                typeValue: '명소',
-                priceLabel: '입장료',
-                priceValue: '정보 없음',
-                scoreLabel: '방문 만족도',
-                pointTitle: '관광지 이용 포인트',
-                reviewTitle: '관광지 방문 후기'
-            },
-            CAFE: {
-                label: '카페',
-                icon: '☕',
-                typeLabel: '카페 유형',
-                typeValue: '분위기 좋은 카페',
-                priceLabel: '대표 메뉴 가격',
-                priceValue: '₩5,000~',
-                scoreLabel: '카페 만족도',
-                pointTitle: '카페 이용 포인트',
-                reviewTitle: '카페 방문 후기'
-            }
-        };
-
-        return map[category] || {
-            label: '여행 경로',
-            icon: '🧳'
-        };
-    }
-
-    function getShortContent(content) {
-        const text = String(content || '').replace(/\s+/g, ' ').trim();
-
-        if (!text) {
-            return '작성자가 남긴 장소 후기를 바탕으로 정리한 추천 정보입니다.';
-        }
-
-        return text.length > 90 ? text.substring(0, 90) + '...' : text;
-    }
-
-    function getKeywordText(tags, fallback) {
-        if (tags.length) {
-            return tags.slice(0, 3).map(tag => `#${tag}`).join(' ');
-        }
-
-        return fallback;
-    }
-
-    function renderPlaceTypeDetail(post) {
-        const category = normalizeCategory(post.category);
-        if (category === 'ROUTE') return;
-
-        const info = getCategoryInfo(category);
-        const tags = parseStyleTags(post.styleTags);
-        const title = post.title || `${info.label} 후기`;
-        const content = post.content || '';
-
-        /*
-         * 여행 경로 전용 영역 숨김
-         */
-        const planBadge = document.getElementById('pr-plan-badge');
-        const placeList = document.getElementById('pr-place-list');
-        const ctaSub = document.getElementById('pr-cta-sub');
-
-        if (planBadge) {
-            planBadge.style.display = 'none';
-        }
-
-        if (placeList) {
-            placeList.style.display = 'none';
-        }
-
-        if (ctaSub) {
-            ctaSub.textContent = `${info.label} 후기를 참고해 나에게 맞는 여행 장소를 찾아보세요.`;
-        }
-
-        /*
-         * 상단 카테고리 라벨 보정
-         */
-        const catEl = document.getElementById('pr-cat');
-        if (catEl) {
-            catEl.textContent = info.label;
-        }
-
-        /*
-         * 기존 장소형 패널 중복 제거
-         */
-        const oldPanel = document.getElementById('community-place-detail-panel');
-        if (oldPanel) oldPanel.remove();
-
-        const body = document.getElementById('pr-body');
-        if (!body) return;
-
-        const panel = document.createElement('div');
-        panel.id = 'community-place-detail-panel';
-        panel.className = 'community-place-detail-panel';
-
-        panel.innerHTML = `
-            <div class="place-detail-hero">
-                <div class="place-detail-icon">${escapeHtml(info.icon)}</div>
-
-                <div class="place-detail-main">
-                    <div class="place-detail-label">${escapeHtml(info.label)} 후기</div>
-                    <h3>${escapeHtml(title)}</h3>
-                    <p>${escapeHtml(getShortContent(content))}</p>
-
-                    <div class="place-detail-tags">
-                        ${tags.length
-            ? tags.slice(0, 5).map(tag => `<span>#${escapeHtml(tag)}</span>`).join('')
-            : `<span>#${escapeHtml(info.label)}</span><span>#추천</span>`
-        }
-                    </div>
-                </div>
-            </div>
-
-            <div class="place-detail-summary-grid">
-                <div class="place-summary-card">
-                    <span>${escapeHtml(info.typeLabel)}</span>
-                    <strong>${escapeHtml(getKeywordText(tags, info.typeValue))}</strong>
-                </div>
-
-                <div class="place-summary-card">
-                    <span>${escapeHtml(info.priceLabel)}</span>
-                    <strong>${escapeHtml(info.priceValue)}</strong>
-                </div>
-
-                <div class="place-summary-card">
-                    <span>${escapeHtml(info.scoreLabel)}</span>
-                    <strong>★★★★☆ 4.5</strong>
-                </div>
-            </div>
-
-            <div class="place-review-box">
-                <div class="place-review-box-head">
-                    <h3>${escapeHtml(info.reviewTitle)}</h3>
-                    <span>평균 평점 4.5</span>
-                </div>
-
-                <div class="place-review-row">
-                    <div class="place-review-avatar">${escapeHtml((post.writerName || 'U').substring(0, 1))}</div>
-                    <div>
-                        <strong>${escapeHtml(post.writerName || '사용자')}</strong>
-                        <p>${escapeHtml(getShortContent(content))}</p>
-                    </div>
-                    <em>★★★★☆</em>
-                </div>
-
-                <div class="place-review-row">
-                    <div class="place-review-avatar">T</div>
-                    <div>
-                        <strong>TripLinker 추천 포인트</strong>
-                        <p>${escapeHtml(info.pointTitle)}가 잘 드러나는 후기입니다. ${escapeHtml(getKeywordText(tags, info.label))}</p>
-                    </div>
-                    <em>★★★★☆</em>
-                </div>
-            </div>
-        `;
-
-        /*
-         * 본문 위에 장소형 요약 패널 삽입
-         */
-        body.insertAdjacentElement('beforebegin', panel);
-    }
-
-    async function applyPlaceTypeDetail(postId) {
-        if (!postId) return;
-
-        const post = window._currentPostDetail;
-
-        if (!post) return;
-
-        const category = normalizeCategory(post.category);
-
-        /*
-         * ROUTE면 장소형 패널 제거 후 기존 여행 경로 상세 유지
-         */
-        if (category === 'ROUTE') {
-            const oldPanel = document.getElementById('community-place-detail-panel');
-            if (oldPanel) oldPanel.remove();
-            return;
-        }
-
-        renderPlaceTypeDetail(post);
-    }
-
-    const prevOpenPostDetailForPlaceType = window.openPostDetail;
-
-    if (typeof prevOpenPostDetailForPlaceType === 'function') {
-        window.openPostDetail = async function (postId) {
-            const result = await prevOpenPostDetailForPlaceType.apply(this, arguments);
-
-            try {
-                await applyPlaceTypeDetail(postId);
-            } catch (e) {
-                console.warn('[community-v2] 장소형 상세 화면 분기 실패:', e);
-            }
-
-            return result;
-        };
-    }
-})();/* =============================================================================
  * community v2 - 상세 페이지 새로고침 복구
  * 목적:
  * - 후기 상세 화면에서 새로고침했을 때 postId가 사라져 화면이 깨지는 문제 방지
@@ -2948,4 +2649,201 @@
     window.addEventListener('load', function () {
         setTimeout(installCommunityV2Search, 300);
     });
+})();
+
+/* =============================================================================
+ * community v2 - 상세 CTA 카테고리별 표시 보정
+ * 목적:
+ * - 여행 경로 글에는 CTA 유지
+ * - 숙소/맛집/관광지/카페 글에는 "이 경로가 마음에 드셨나요?" CTA 숨김
+ * ============================================================================= */
+
+(function () {
+    'use strict';
+
+    function normalizeCategoryForCta(category) {
+        if (!category || String(category).trim() === '') return 'ROUTE';
+
+        const value = String(category).toUpperCase();
+
+        if (['ROUTE', 'STAY', 'FOOD', 'TOUR', 'CAFE'].includes(value)) {
+            return value;
+        }
+
+        return 'ROUTE';
+    }
+
+    function fixReviewCtaByCategory() {
+        const post = window._currentPostDetail;
+        const cta = document.querySelector('#page-review .review-cta');
+
+        if (!cta || !post) return;
+
+        const category = normalizeCategoryForCta(post.category);
+
+        if (category === 'ROUTE') {
+            cta.style.display = '';
+        } else {
+            cta.style.display = 'none';
+        }
+    }
+
+    const prevOpenPostDetailForCta = window.openPostDetail;
+
+    if (typeof prevOpenPostDetailForCta === 'function' && !prevOpenPostDetailForCta.__communityCtaWrapped) {
+        window.openPostDetail = async function (postId) {
+            const result = await prevOpenPostDetailForCta.apply(this, arguments);
+
+            setTimeout(fixReviewCtaByCategory, 50);
+
+            return result;
+        };
+
+        window.openPostDetail.__communityCtaWrapped = true;
+    }
+})();
+
+/* =============================================================================
+ * community v2 - 좋아요/스크랩 버튼 상태 표시 + 토글 보정
+ * 목적:
+ * - 상세 진입 시 likedByMe/scrappedByMe에 따라 버튼을 민트색으로 채움
+ * - 다시 누르면 취소되고 버튼 색상도 원래대로 복구
+ * ============================================================================= */
+
+(function () {
+    'use strict';
+
+    const ACTIVE_COLOR = '#46B29E';
+
+    function getCurrentPostId() {
+        return window._currentPostId || window._openedPostId || null;
+    }
+
+    function setButtonActive(btn, active) {
+        if (!btn) return;
+
+        if (active) {
+            btn.classList.add('community-action-active');
+            btn.style.background = ACTIVE_COLOR;
+            btn.style.borderColor = ACTIVE_COLOR;
+            btn.style.color = '#fff';
+        } else {
+            btn.classList.remove('community-action-active');
+            btn.style.background = '';
+            btn.style.borderColor = '';
+            btn.style.color = '';
+        }
+    }
+
+    function getLikeButton() {
+        return [...document.querySelectorAll('button')]
+            .find(btn => btn.textContent && btn.textContent.includes('좋아요'));
+    }
+
+    function getScrapButton() {
+        return [...document.querySelectorAll('button')]
+            .find(btn => btn.textContent && btn.textContent.includes('스크랩'));
+    }
+
+    function applyCurrentPostActionState() {
+        const post = window._currentPostDetail;
+        if (!post) return;
+
+        const likeBtn = getLikeButton();
+        const scrapBtn = getScrapButton();
+
+        setButtonActive(likeBtn, !!post.likedByMe);
+        setButtonActive(scrapBtn, !!post.scrappedByMe);
+    }
+
+    const prevOpenPostDetailForActionState = window.openPostDetail;
+
+    if (typeof prevOpenPostDetailForActionState === 'function' && !prevOpenPostDetailForActionState.__communityActionStateWrapped) {
+        window.openPostDetail = async function (postId) {
+            const result = await prevOpenPostDetailForActionState.apply(this, arguments);
+
+            setTimeout(applyCurrentPostActionState, 80);
+
+            return result;
+        };
+
+        window.openPostDetail.__communityActionStateWrapped = true;
+    }
+
+    window.doReviewLike = async function () {
+        if (typeof Token === 'undefined' || !Token.getAccess || !Token.getAccess()) {
+            if (typeof toast === 'function') toast('로그인이 필요합니다.');
+            if (typeof go === 'function') go('login');
+            return;
+        }
+
+        const postId = getCurrentPostId();
+
+        if (!postId) {
+            if (typeof toast === 'function') toast('게시글 정보를 찾을 수 없습니다.');
+            return;
+        }
+
+        const res = await api.post(`/api/posts/${postId}/likes`, {});
+
+        if (!res || res.success === false) {
+            if (typeof toast === 'function') toast(res?.message || '좋아요 처리에 실패했습니다.');
+            return;
+        }
+
+        const liked = res.data === true;
+
+        if (window._currentPostDetail) {
+            window._currentPostDetail.likedByMe = liked;
+
+            const currentCount =
+                Number(window._currentPostDetail.likeCount ?? window._currentPostDetail.likes ?? 0);
+
+            window._currentPostDetail.likeCount = liked
+                ? currentCount + 1
+                : Math.max(0, currentCount - 1);
+        }
+
+        if (typeof toast === 'function') {
+            toast(liked ? '좋아요를 눌렀습니다.' : '좋아요를 취소했습니다.');
+        }
+
+        await window.openPostDetail(postId);
+    };
+
+    window.doReviewScrap = async function () {
+        if (typeof Token === 'undefined' || !Token.getAccess || !Token.getAccess()) {
+            if (typeof toast === 'function') toast('로그인이 필요합니다.');
+            if (typeof go === 'function') go('login');
+            return;
+        }
+
+        const postId = getCurrentPostId();
+
+        if (!postId) {
+            if (typeof toast === 'function') toast('게시글 정보를 찾을 수 없습니다.');
+            return;
+        }
+
+        const category = window._currentPostCategory || window._currentPostDetail?.category || 'ROUTE';
+
+        const res = await api.post(`/api/posts/${postId}/scraps?category=${category}`, {});
+
+        if (!res || res.success === false) {
+            if (typeof toast === 'function') toast(res?.message || '스크랩 처리에 실패했습니다.');
+            return;
+        }
+
+        const scrapped = res.data === true;
+
+        if (window._currentPostDetail) {
+            window._currentPostDetail.scrappedByMe = scrapped;
+        }
+
+        if (typeof toast === 'function') {
+            toast(scrapped ? '스크랩했습니다.' : '스크랩을 취소했습니다.');
+        }
+
+        await window.openPostDetail(postId);
+    };
 })();

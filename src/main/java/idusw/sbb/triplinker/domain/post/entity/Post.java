@@ -81,6 +81,17 @@ public class Post {
     public void increaseViewCount() {this.viewCount++;}
     public void delete() {this.status = "DELETED";}
 
+    public void update(String title, String content, String styleTags, String category, Boolean isPublic) {
+        this.title = title;
+        this.content = content;
+        this.styleTags = styleTags;
+        this.category = category != null ? category : "ROUTE";
+
+        if (isPublic != null) {
+            this.isPublic = isPublic;
+        }
+    }
+
     @PrePersist
     protected void onCreate() {
         LocalDateTime now = LocalDateTime.now();
