@@ -84,6 +84,7 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.GET, "/api/places").permitAll()                // 장소 카드 탭 목록
                         .requestMatchers(HttpMethod.GET, "/api/places/**").permitAll()             // 장소 상세 (후기·리뷰)
                         .requestMatchers(HttpMethod.GET, "/api/trips/*/routes").permitAll()        // 공유 링크 읽기 전용
+                        .requestMatchers(HttpMethod.GET, "/api/curations").permitAll()
 
                         // 관리자 전용 기능
                         .requestMatchers("/api/admin/**").hasRole("ADMIN")

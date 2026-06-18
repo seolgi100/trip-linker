@@ -16,6 +16,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
@@ -55,7 +56,23 @@ public class PostController {
             @RequestParam(required = false) String sort,
             @RequestParam(required = false) String category
     ) {
-        Pageable pageable = PageRequest.of(page, size);
+        // 프론트엔드에서 넘어온 sort 값을 안전하게 변환
+        String sortProperty = "createdAt"; // 기본값: 최신순
+        if (sort != null && !sort.isEmpty()) {
+            if ("scrap".equals(sort)) {
+                // Post 엔티티에 scrap 필드가 없으므로, 임시로 좋아요순(likeCount)이나 최신순으로 우회합니다.
+                // 만약 나중에 Post 엔티티에 scrapCount 필드를 만드신다면 "scrapCount"로 변경하시면 됩니다.
+                sortProperty = "likeCount";
+            } else {
+                sortProperty = sort;
+            }
+        }
+
+        // Pageable 객체 생성 (안전하게 변환된 sortProperty 사용)
+        Pageable pageable = PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, sortProperty));
+
+
+//        Pageable pageable = PageRequest.of(page, size);
 
         Page<PostListResponseDto> posts = postService.getPosts(pageable, category);
 
@@ -196,7 +213,7 @@ public class PostController {
             @PathVariable Long postId,
             @RequestBody ReportRequestDto dto
     ) {
-        ReportRequestDto reportDto = new ReportRequestDto(postId, dto.getReason());
+        ReportRequestDto reportDto = new ReportRequestDto(postId, dto.reason());
         Long reportId = systemService.reportPost(userDetails.getUserId(), reportDto);
         return ResponseEntity.ok(reportId);
     }

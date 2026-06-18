@@ -236,7 +236,7 @@
 
     const { escapeHtml, getCurrentPostId, requireLogin } = window._commUtil;
 
-    window.doReviewReport = async function () {
+    window.doReviewReport = function () {
         if (!requireLogin()) return;
 
         const postId = getCurrentPostId();
@@ -245,16 +245,30 @@
             return;
         }
 
-        const reason = prompt('신고 사유를 입력해주세요.');
-        if (!reason || !reason.trim()) return;
+        window._reportPostId = postId;
+        const sel = document.getElementById('reportReasonSelect');
+        if (sel) sel.value = '';
+        const modal = document.getElementById('reportPostModal');
+        if (modal) modal.style.display = 'flex';
+    };
 
-        const res = await api.post(`/api/posts/${postId}/reports`, {
-            postId: postId,
-            reason: reason.trim()
-        });
+    window.submitReportPost = async function () {
+        const sel = document.getElementById('reportReasonSelect');
+        const reason = sel ? sel.value : '';
+        if (!reason) {
+            if (typeof toast === 'function') toast('신고 사유를 선택해주세요.');
+            return;
+        }
+
+        const postId = window._reportPostId || window._currentPostId;
+        const res = await api.post(`/api/posts/${postId}/reports`, { postId, reason });
+
+        const modal = document.getElementById('reportPostModal');
+        if (modal) modal.style.display = 'none';
+        window._reportPostId = null;
 
         if (typeof toast === 'function') {
-            toast(res?.success !== false ? '신고가 접수되었습니다.' : res?.message || '신고 처리에 실패했습니다.');
+            toast(res?.success !== false ? '🚨 신고가 접수되었습니다.' : res?.message || '신고 처리에 실패했습니다.');
         }
     };
 

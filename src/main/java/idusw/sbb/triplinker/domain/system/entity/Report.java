@@ -10,75 +10,69 @@ import lombok.NoArgsConstructor;
 
 import java.time.LocalDateTime;
 
+// 게시글 신고(REPORTS 테이블) 엔티티
+// 사용자가 신고하면 PENDING 상태로 생성되고, 관리자가 삭제 처리(RESOLVED) 또는
+// 반려 처리(REJECTED)하면 상태가 바뀐다.
+
 @Entity
 @Table(name = "REPORTS")
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class Report {
 
-    // 신고 기본키
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    // 신고 대상 게시글
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "post_id", nullable = false)
     private Post post;
 
-    // 신고 회원
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "reporter_user_id", nullable = false)
-    private User reporterUser;
+    @JoinColumn(name = "reporter_id", nullable = false)
+    private User reporter;
 
-    // 신고 사유
     @Column(nullable = false, columnDefinition = "TEXT")
     private String reason;
 
-    // 처리 상태
     @Column(nullable = false, length = 20)
-    private String status = "PENDING";
+    private String status; // PENDING, REJECTED, RESOLVED
 
-    // 관리자 처리 메모
     @Column(name = "admin_note", columnDefinition = "TEXT")
     private String adminNote;
 
-    // 신고 처리 일시
     @Column(name = "processed_at")
     private LocalDateTime processedAt;
 
-    // 신고 접수 일시
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
 
-    @Builder
-    public Report(Post post,
-                  User reporterUser,
-                  String reason,
-                  String status,
-                  String adminNote) {
-
-        this.post = post;
-        this.reporterUser = reporterUser;
-        this.reason = reason;
-        this.status = status != null ? status : "PENDING";
-        this.adminNote = adminNote;
-
-        // 신고 생성 시 현재 시간 저장
+    @PrePersist
+    protected void onCreate() {
         this.createdAt = LocalDateTime.now();
+        if (this.status == null) this.status = "PENDING";
     }
 
-    // 신고 승인 처리
+    @Builder
+    public Report(Post post, User reporter, String reason) {
+        this.post = post;
+        this.reporter = reporter;
+        this.reason = reason;
+        this.status = "PENDING";
+    }
+
+    // 관리자 - 신고 반려(무혐의) 처리
+    public void reject(String adminNote) {
+        this.status = "REJECTED";
+        this.adminNote = adminNote;
+        this.processedAt = LocalDateTime.now();
+    }
+
+    // 관리자 - 신고를 받아들여 게시글 삭제로 종결 처리
     public void resolve(String adminNote) {
         this.status = "RESOLVED";
         this.adminNote = adminNote;
         this.processedAt = LocalDateTime.now();
     }
 
-    // 신고 반려 처리
-    public void reject(String adminNote) {
-        this.status = "REJECTED";
-        this.adminNote = adminNote;
-        this.processedAt = LocalDateTime.now();
-    }
 }
