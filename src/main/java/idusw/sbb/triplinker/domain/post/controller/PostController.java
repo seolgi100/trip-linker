@@ -201,6 +201,7 @@ public class PostController {
         return ResponseEntity.ok(reportId);
     }
 
+
     // 장소 리뷰 저장
     @PostMapping("/{postId}/place-reviews")
     public ResponseEntity<Void> savePlaceReviews(
@@ -231,5 +232,20 @@ public class PostController {
     ) {
         postService.updatePlaceReviews(userDetails.getUserId(), postId, dto);
         return ResponseEntity.ok().build();
+    }
+
+
+    // 커뮤니티 - 게시글 이미지 삭제
+    @DeleteMapping("/{postId}/images")
+    public ResponseEntity<ApiResponse<Void>> deletePostImage(
+            @AuthenticationPrincipal CustomUserDetails userDetails,
+            @PathVariable Long postId,
+            @RequestParam String imageUrl
+    ) {
+        postService.deletePostImage(userDetails.getUserId(), postId, imageUrl);
+
+        return ResponseEntity.ok(
+                ApiResponse.success("게시글 이미지 삭제 성공", null)
+        );
     }
 }

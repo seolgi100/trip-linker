@@ -197,7 +197,7 @@ public class PostService {
         Post post = postRepository.findById(postId)
                 .orElseThrow(() -> new IllegalArgumentException("게시글을 찾을 수 없습니다."));
 
-        if (!Objects.equals(post.getUser().getId(), userId)) {
+        if (post.getUser() == null || !Objects.equals(post.getUser().getId(), userId)) {
             throw new IllegalArgumentException("게시글 삭제 권한이 없습니다.");
         }
 
@@ -214,7 +214,7 @@ public class PostService {
         Post post = postRepository.findById(postId)
                 .orElseThrow(() -> new IllegalArgumentException("게시글을 찾을 수 없습니다."));
 
-        if (post.getUser() == null || !post.getUser().getId().equals(userId)) {
+        if (post.getUser() == null || !Objects.equals(post.getUser().getId(), userId)) {
             throw new IllegalArgumentException("본인이 작성한 게시글만 수정할 수 있습니다.");
         }
 
@@ -222,9 +222,34 @@ public class PostService {
                 dto.getTitle(),
                 dto.getContent(),
                 dto.getStyleTags(),
-                dto.getCategory(),
+                normalizeCategory(dto.getCategory()),
                 dto.isPublic()
         );
+
+        // 수정 화면에서 새로 추가한 이미지가 있으면 기존 이미지 뒤에 추가
+        if (dto.getImageUrls() != null && !dto.getImageUrls().isEmpty()) {
+            List<PostImage> existingImages =
+                    postImageRepository.findByPostIdOrderByImageOrderAsc(postId);
+
+            int nextOrder = existingImages.stream()
+                    .map(PostImage::getImageOrder)
+                    .filter(Objects::nonNull)
+                    .max(Integer::compareTo)
+                    .orElse(-1) + 1;
+
+            for (int i = 0; i < dto.getImageUrls().size(); i++) {
+                String imageUrl = dto.getImageUrls().get(i);
+
+                PostImage image = PostImage.builder()
+                        .post(post)
+                        .imageUrl(imageUrl)
+                        .s3ObjectKey(imageUrl)
+                        .imageOrder(nextOrder + i)
+                        .build();
+
+                postImageRepository.save(image);
+            }
+        }
 
         return post.getId();
     }
@@ -431,5 +456,28 @@ public class PostService {
                 .stream()
                 .map(PlaceReviewResponseDto::from)
                 .collect(Collectors.toList());
+    }
+
+    // 커뮤니티 - 게시글 이미지 삭제
+    @Transactional
+    public void deletePostImage(Long userId, Long postId, String imageUrl) {
+        Post post = postRepository.findById(postId)
+                .orElseThrow(() -> new IllegalArgumentException("게시글을 찾을 수 없습니다."));
+
+        if (post.getUser() == null || !Objects.equals(post.getUser().getId(), userId)) {
+            throw new IllegalArgumentException("본인이 작성한 게시글의 이미지만 삭제할 수 있습니다.");
+        }
+
+        PostImage image = postImageRepository.findByPostIdOrderByImageOrderAsc(postId)
+                .stream()
+                .filter(img -> Objects.equals(img.getImageUrl(), imageUrl))
+                .findFirst()
+                .orElseThrow(() -> new IllegalArgumentException("이미지를 찾을 수 없습니다."));
+
+        // 실제 로컬 이미지 파일 삭제
+        localFileService.delete(image.getImageUrl());
+
+        // DB에서 POST_IMAGES row 삭제
+        postImageRepository.delete(image);
     }
 }
