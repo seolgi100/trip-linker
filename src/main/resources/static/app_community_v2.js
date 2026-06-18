@@ -4300,19 +4300,82 @@
      * 미리보기 모달 - 스크랩 버튼
      */
     window.scrapCurrentPreviewPlan = async function () {
-        if (!requireLogin()) return;
-
-        const post = getCurrentPostForAction();
+        const post = window._currentPostDetail;
 
         if (!post || !post.postId) {
-            if (typeof toast === 'function') toast('스크랩할 게시글 정보를 찾을 수 없습니다.');
+            if (typeof toast === 'function') {
+                toast('스크랩할 커뮤니티 글 정보를 찾을 수 없습니다.');
+            }
             return;
         }
 
-        const category = getCurrentPostCategory(post);
+        if (typeof Token === 'undefined' || !Token.getAccess || !Token.getAccess()) {
+            if (typeof toast === 'function') {
+                toast('로그인이 필요합니다.');
+            }
+
+            if (typeof go === 'function') {
+                go('login');
+            }
+            return;
+        }
+
+        const postId = post.postId;
+        const category = String(post.category || 'ROUTE').toUpperCase();
+
+        function getScrapPostId(item) {
+            return (
+                item?.postId ||
+                item?.id ||
+                item?.post?.postId ||
+                item?.post?.id ||
+                item?.data?.postId ||
+                item?.data?.id
+            );
+        }
 
         try {
-            const res = await api.post(`/api/posts/${post.postId}/scraps?category=${category}`, {});
+            /*
+             * 먼저 POST_SCRAPS DB 기반 목록에서 이미 담긴 글인지 확인
+             * 이미 있으면 POST를 보내지 않는다.
+             */
+            const scrappedRes = await api.get('/api/posts/scrapped');
+
+            const scrappedPosts = Array.isArray(scrappedRes)
+                ? scrappedRes
+                : Array.isArray(scrappedRes?.data)
+                    ? scrappedRes.data
+                    : Array.isArray(scrappedRes?.data?.content)
+                        ? scrappedRes.data.content
+                        : Array.isArray(scrappedRes?.content)
+                            ? scrappedRes.content
+                            : [];
+
+            const alreadyScrapped = scrappedPosts.some(item =>
+                String(getScrapPostId(item)) === String(postId)
+            );
+
+            if (alreadyScrapped) {
+                if (typeof closeCommunityPlanPreview === 'function') {
+                    closeCommunityPlanPreview();
+                }
+
+                alert('이미 스크랩한 커뮤니티 글입니다.');
+
+                /*
+                 * 보고 있던 상세 페이지로 다시 복귀
+                 */
+                if (typeof window.openPostDetail === 'function') {
+                    await window.openPostDetail(postId);
+                }
+
+                return;
+            }
+
+            /*
+             * 아직 없을 때만 스크랩 저장
+             */
+            const res = await api.post(`/api/posts/${postId}/scraps?category=${category}`, {});
 
             if (res && res.success === false) {
                 if (typeof toast === 'function') {
@@ -4321,14 +4384,51 @@
                 return;
             }
 
-            if (typeof toast === 'function') toast('스크랩되었습니다.');
+            /*
+             * 혹시 백엔드가 false를 돌려주면 이미 있거나 취소 처리된 상태로 본다.
+             */
+            if (res?.data === false || res === false) {
+                if (typeof closeCommunityPlanPreview === 'function') {
+                    closeCommunityPlanPreview();
+                }
 
+                alert('이미 스크랩한 커뮤니티 글입니다.');
+
+                if (typeof window.openPostDetail === 'function') {
+                    await window.openPostDetail(postId);
+                }
+
+                return;
+            }
+
+            if (typeof closeCommunityPlanPreview === 'function') {
+                closeCommunityPlanPreview();
+            }
+
+            if (typeof toast === 'function') {
+                toast('마이페이지 > 스크랩한 커뮤니티에 추가되었습니다.');
+            }
+
+            /*
+             * 마이페이지 스크랩한 커뮤니티 목록이 열려 있으면 즉시 갱신
+             */
             if (typeof window.loadMyCommunityScraps === 'function') {
                 setTimeout(window.loadMyCommunityScraps, 200);
             }
+
+            /*
+             * 상세 화면 다시 조회해서 스크랩 수 갱신
+             */
+            if (typeof window.openPostDetail === 'function') {
+                await window.openPostDetail(postId);
+            }
+
         } catch (e) {
-            console.error('[community-v2] 커뮤니티 스크랩 실패:', e);
-            if (typeof toast === 'function') toast('스크랩에 실패했습니다.');
+            console.error('[community-v2] 미리보기 모달 커뮤니티 스크랩 실패:', e);
+
+            if (typeof toast === 'function') {
+                toast('스크랩 처리에 실패했습니다.');
+            }
         }
     };
 
@@ -4569,9 +4669,7 @@
         localStorage.setItem(COMMUNITY_TRIP_KEY, JSON.stringify(list || []));
     }
 
-    /*
-     * 내 여행기록에 커뮤니티 경로 추가
-     */
+    // 내 여행기록에 커뮤니티 경로 추가
     function addPostPlanToLocalTrips(post) {
         const planId = post.planId;
         if (!planId) return;
@@ -4596,10 +4694,6 @@
         saveLocalTrips(oldList);
     }
 
-    /*
-     * app_main.js의 _renderMyTrips는 /api/trips 결과만 렌더링하므로
-     * localStorage에 저장한 커뮤니티 추가 경로를 합쳐서 렌더링하도록 감싼다.
-     */
     function wrapRenderMyTrips() {
         if (typeof window._renderMyTrips !== 'function') return;
         if (window._renderMyTrips.__communityAddedTripsWrapped) return;
@@ -4626,9 +4720,7 @@
 
             originalRenderMyTrips([...map.values()]);
 
-            /*
-             * 커뮤니티에서 추가한 경로 카드는 클릭 시 해당 planId를 세션에 넣고 map으로 이동
-             */
+            // 커뮤니티에서 추가한 경로 카드는 클릭 시 해당 planId를 세션에 넣고 map으로 이동
             setTimeout(function () {
                 document.querySelectorAll('#my-trips .trip-card').forEach(card => {
                     const titleEl = card.querySelector('.trip-ttl');
@@ -4654,10 +4746,7 @@
         window._renderMyTrips.__communityAddedTripsWrapped = true;
     }
 
-    /*
-     * showMySection 보정:
-     * page_mypage.html에 추가한 scrap-community 섹션도 정상 로드
-     */
+    // showMySection 보정: page_mypage.html에 추가한 scrap-community 섹션 정상 로드
     function wrapShowMySection() {
         if (typeof window.showMySection !== 'function') return;
         if (window.showMySection.__communityScrapWrapped) return;
@@ -4697,9 +4786,7 @@
 
         const planId = String(post.planId);
 
-        /*
-         * map/detail 페이지가 이 planId를 기준으로 실제 경로를 불러오도록 저장
-         */
+        // map/detail 페이지가 이 planId를 기준으로 실제 경로를 불러오도록 저장
         window._currentTripId = Number(planId);
 
         sessionStorage.setItem('plannerDraftId', planId);
@@ -4707,9 +4794,7 @@
         sessionStorage.setItem('communityPreviewPlanId', planId);
         sessionStorage.setItem('communityPreviewPostId', String(post.postId || ''));
 
-        /*
-         * 예전 AI/더미 경로가 남아 있으면 제주 더미가 다시 뜰 수 있으므로 제거
-         */
+        // 예전 AI/더미 경로가 남아 있으면 제주 더미가 다시 뜰 수 있으므로 제거
         sessionStorage.removeItem('ai_generated_route');
         sessionStorage.removeItem('aiRouteDraft');
         sessionStorage.removeItem('plannerDraft');
@@ -4722,16 +4807,12 @@
             toast('해당 경로를 불러왔습니다.');
         }
 
-        /*
-         * 마이페이지가 아니라 실제 경로 상세/지도 페이지로 이동
-         */
+        // 마이페이지가 아니라 실제 경로 상세/지도 페이지로 이동
         if (typeof go === 'function') {
             go('map');
         }
 
-        /*
-         * map 페이지가 이미 떠 있는 상태에서 이동하면 initMapPage가 자동 실행 안 될 수 있어서 강제 재호출
-         */
+        // map 페이지가 이미 떠 있는 상태에서 이동하면 initMapPage가 자동 실행 안 될 수 있어서 강제 재호출
         setTimeout(function () {
             if (typeof initMapPage === 'function') {
                 initMapPage();
@@ -4745,9 +4826,7 @@
         }, 500);
     };
 
-    /*
-     * CTA 미리보기 모달: 스크랩
-     */
+    // CTA 미리보기 모달: 스크랩
     window.scrapCurrentPreviewPlan = async function () {
         if (!requireLogin()) return;
 
@@ -4761,9 +4840,7 @@
         const category = getCurrentPostCategory(post);
 
         try {
-            /*
-             * POST_SCRAPS DB에 저장
-             */
+            // POST_SCRAPS DB에 저장
             const res = await api.post(`/api/posts/${post.postId}/scraps?category=${category}`, {});
 
             if (res && res.success === false) {
@@ -4777,10 +4854,7 @@
                 toast('스크랩되었습니다.');
             }
 
-            /*
-             * 마이페이지 스크랩한 커뮤니티 목록 다시 조회
-             * 이제 localStorage가 아니라 /api/posts/scrapped 사용
-             */
+            // 마이페이지 스크랩한 커뮤니티 목록 조회 /api/posts/scrapped
             if (typeof window.loadMyCommunityScraps === 'function') {
                 setTimeout(window.loadMyCommunityScraps, 200);
             }
@@ -4793,9 +4867,7 @@
         }
     };
 
-    /*
-     * 미리보기 모달 버튼 재연결
-     */
+    // 미리보기 모달 버튼 재연결
     function bindCommunityPreviewButtons() {
         const goBtn = document.getElementById('cpp-go-planner-btn');
         const scrapBtn = document.querySelector('.community-plan-preview-actions .cpp-sub-btn');
@@ -4844,10 +4916,7 @@
     `;
 
         try {
-            /*
-             * POST_SCRAPS DB 기반 조회
-             * Controller: GET /api/posts/scrapped
-             */
+            // Controller: GET /api/posts/scrapped
             const res = await api.get('/api/posts/scrapped');
 
             const scraps = Array.isArray(res)
@@ -4963,11 +5032,6 @@
 
             if (!isLike && !isScrap) return;
 
-            /*
-             * 강제 활성화 스타일만 제거한다.
-             * 버튼 텍스트는 건드리지 않는다.
-             * 기존 CSS hover 효과는 그대로 유지된다.
-             */
             btn.classList.remove('community-action-active');
             btn.classList.remove('active');
             btn.classList.remove('on');
@@ -5028,9 +5092,7 @@
         normalizeDetailMetaPosition();
     }
 
-    /*
-     * 상세 열릴 때마다 보정
-     */
+    // 상세 열릴 때마다 보정
     const prevOpenPostDetailForCleanButtons = window.openPostDetail;
 
     if (
@@ -5050,11 +5112,7 @@
         window.openPostDetail.__cleanActionButtonWrapped = true;
     }
 
-    /*
-     * 좋아요 클릭
-     * - 버튼 색상 직접 변경 없음
-     * - 토스트 + 상세 재조회만 수행
-     */
+    // 좋아요 클릭
     window.doReviewLike = async function () {
         if (!isLoggedInSafe()) {
             if (typeof toast === 'function') toast('로그인이 필요합니다.');
@@ -5091,11 +5149,7 @@
         }
     };
 
-    /*
-     * 스크랩 클릭
-     * - 버튼 색상 직접 변경 없음
-     * - 토스트 + 상세 재조회만 수행
-     */
+    // 스크랩 클릭
     window.doReviewScrap = async function () {
         if (!isLoggedInSafe()) {
             if (typeof toast === 'function') toast('로그인이 필요합니다.');
@@ -5135,4 +5189,149 @@
     };
 
     setTimeout(normalizeDetailHeaderUI, 500);
+})();
+
+/* =============================================================================
+ * community v2 - 미리보기 모달 스크랩 최종 덮어쓰기
+ * 목적:
+ * - CTA 미리보기 모달의 스크랩 버튼이 현재 커뮤니티 글을 스크랩
+ * - 이미 스크랩한 글이면 POST를 보내지 않고 토스트만 표시
+ * - 성공 멘트 변경
+ * ============================================================================= */
+(function () {
+    'use strict';
+
+    function extractArray(res) {
+        if (Array.isArray(res)) return res;
+        if (Array.isArray(res?.data)) return res.data;
+        if (Array.isArray(res?.data?.content)) return res.data.content;
+        if (Array.isArray(res?.content)) return res.content;
+        return [];
+    }
+
+    function getPostIdFromScrapItem(item) {
+        return (
+            item?.postId ||
+            item?.id ||
+            item?.post?.postId ||
+            item?.post?.id
+        );
+    }
+
+    async function getCurrentPreviewPost() {
+        // 1순위: 상세 페이지에서 이미 저장한 현재 글
+        if (window._currentPostDetail && window._currentPostDetail.postId) {
+            return window._currentPostDetail;
+        }
+
+        // 2순위: 현재 열려 있는 상세 글 ID로 다시 조회
+        const postId =
+            window._currentPostId ||
+            window._openedPostId ||
+            sessionStorage.getItem('communityCurrentPostId');
+
+        if (!postId) return null;
+
+        try {
+            const res = await api.get('/api/posts/' + postId);
+
+            if (res && res.success !== false && res.data) {
+                window._currentPostDetail = res.data;
+                return res.data;
+            }
+        } catch (e) {
+            console.warn('[community-v2] 현재 게시글 재조회 실패:', e);
+        }
+
+        return null;
+    }
+
+    window.scrapCurrentPreviewPlan = async function () {
+        const post = await getCurrentPreviewPost();
+
+        if (!post || !post.postId) {
+            if (typeof toast === 'function') {
+                toast('스크랩할 커뮤니티 글 정보를 찾을 수 없습니다.');
+            }
+            return;
+        }
+
+        if (typeof Token === 'undefined' || !Token.getAccess || !Token.getAccess()) {
+            if (typeof toast === 'function') {
+                toast('로그인이 필요합니다.');
+            }
+
+            if (typeof go === 'function') {
+                go('login');
+            }
+            return;
+        }
+
+        const postId = post.postId;
+        const category = String(post.category || window._currentPostCategory || 'ROUTE').toUpperCase();
+
+        try {
+            const scrappedRes = await api.get('/api/posts/scrapped');
+            const scrappedPosts = extractArray(scrappedRes);
+
+            const alreadyScrapped = scrappedPosts.some(item =>
+                String(getPostIdFromScrapItem(item)) === String(postId)
+            );
+
+            if (alreadyScrapped) {
+                if (typeof closeCommunityPlanPreview === 'function') {
+                    closeCommunityPlanPreview();
+                }
+
+                if (typeof toast === 'function') {
+                    toast('이미 스크랩한 커뮤니티 글입니다.');
+                }
+
+                // 보고 있던 커뮤니티 상세 화면 유지
+                if (typeof window.openPostDetail === 'function') {
+                    await window.openPostDetail(postId);
+                }
+
+                return;
+            }
+
+            //아직 스크랩하지 않은 글만 DB에 추가
+
+            const res = await api.post('/api/posts/' + postId + '/scraps?category=' + category, {});
+
+            if (res && res.success === false) {
+                if (typeof toast === 'function') {
+                    toast(res.message || '스크랩에 실패했습니다.');
+                }
+                return;
+            }
+
+            if (typeof closeCommunityPlanPreview === 'function') {
+                closeCommunityPlanPreview();
+            }
+
+            if (typeof toast === 'function') {
+                toast('마이페이지 > 스크랩한 커뮤니티에 추가되었습니다.');
+            }
+
+            // 스크랩한 커뮤니티 탭이 열려 있으면 즉시 갱신
+
+            if (typeof window.loadMyCommunityScraps === 'function') {
+                setTimeout(window.loadMyCommunityScraps, 200);
+            }
+
+            // 상세 페이지 스크랩 수 갱신
+
+            if (typeof window.openPostDetail === 'function') {
+                await window.openPostDetail(postId);
+            }
+
+        } catch (e) {
+            console.error('[community-v2] 미리보기 모달 커뮤니티 스크랩 실패:', e);
+
+            if (typeof toast === 'function') {
+                toast('스크랩 처리에 실패했습니다.');
+            }
+        }
+    };
 })();
