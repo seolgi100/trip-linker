@@ -176,7 +176,22 @@
             return;
         }
 
-        const res = await api.post(`/api/posts/${postId}/scraps?category=ROUTE`, {});
+        const currentTab =
+            typeof _commState !== 'undefined' && _commState.currentTab
+                ? _commState.currentTab
+                : 'route';
+
+        const categoryMap = {
+            route: 'ROUTE',
+            stay: 'STAY',
+            food: 'FOOD',
+            tour: 'TOUR',
+            cafe: 'CAFE'
+        };
+
+        const category = categoryMap[currentTab] || 'ROUTE';
+
+        const res = await api.post(`/api/posts/${postId}/scraps?category=${category}`, {});
 
         /*
          * 정상 처리 기준:
