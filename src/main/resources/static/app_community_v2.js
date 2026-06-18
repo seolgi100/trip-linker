@@ -431,8 +431,10 @@
         }
 
         const editBtn = document.getElementById('btn-review-edit');
-        if (editBtn && typeof _currentUser !== 'undefined' && _currentUser && _currentUser.userId === post.userId) {
-            editBtn.style.display = 'inline-flex';
+
+        if (editBtn) {
+            editBtn.style.display = 'none';
+            editBtn.onclick = null;
         }
     }
 
@@ -589,6 +591,32 @@
 
     window.submitReview = async function () {
 
+        function resetCommunityWriteForm() {
+            const titleEl = document.getElementById('writeTitle');
+            const editorEl = document.getElementById('blogEditor');
+            const tagsEl = document.getElementById('writeTags');
+            const publicEl = document.getElementById('writePublic');
+            const planEl = document.getElementById('writePlanId');
+            const imageInput = document.getElementById('communityImageInput');
+
+            if (titleEl) titleEl.value = '';
+            if (tagsEl) tagsEl.value = '';
+            if (planEl) planEl.value = '';
+            if (imageInput) imageInput.value = '';
+
+            if (publicEl) publicEl.checked = true;
+
+            if (editorEl) {
+                if ('value' in editorEl) {
+                    editorEl.value = '';
+                }
+                editorEl.innerHTML = '';
+                editorEl.textContent = '';
+            }
+
+            window._communitySelectedImages = [];
+        }
+
         if (typeof _isSuspended !== 'undefined' && _isSuspended) {
             if (typeof toast === 'function') {
                 toast('⛔ 해당 계정은 커뮤니티 기능이 제한되었습니다.');
@@ -647,13 +675,21 @@
 
         // 선택된 이미지가 있으면 먼저 서버에 업로드하고 URL 목록을 받아오기
         let imageUrls = [];
-        const selectedImages = window._communitySelectedImages || [];
+
+        const selectedImages = (window._communitySelectedImages || [])
+            .filter(item => item && item.file instanceof File);
+
+        window._communitySelectedImages = selectedImages;
 
         if (selectedImages.length > 0) {
             const formData = new FormData();
-            selectedImages.forEach(item => formData.append('files', item.file));
+
+            selectedImages.forEach(item => {
+                formData.append('files', item.file);
+            });
 
             const token = Token.getAccess();
+
             const uploadRes = await fetch('/api/posts/images', {
                 method: 'POST',
                 headers: token ? { Authorization: 'Bearer ' + token } : {},
@@ -661,7 +697,19 @@
             });
 
             if (!uploadRes.ok) {
-                if (typeof toast === 'function') toast('이미지 업로드에 실패했습니다.');
+                const errText = await uploadRes.text();
+                console.error('[community-v2] 이미지 업로드 실패:', uploadRes.status, errText);
+
+                if (uploadRes.status === 413) {
+                    if (typeof toast === 'function') {
+                        toast('이미지 용량이 너무 큽니다. 더 작은 이미지로 다시 시도해주세요.');
+                    }
+                    return;
+                }
+
+                if (typeof toast === 'function') {
+                    toast('이미지 업로드에 실패했습니다.');
+                }
                 return;
             }
 
@@ -690,7 +738,7 @@
             typeof res?.data === 'number';
 
         if (success) {
-            window._communitySelectedImages = [];
+            resetCommunityWriteForm();
 
             if (typeof closeWrite === 'function') {
                 closeWrite();
@@ -975,6 +1023,14 @@
             // 새 작성 모달이 열릴 때마다 이전 이미지 선택 상태를 초기화한다
             window._communitySelectedImages = [];
 
+            const imageInput = document.getElementById('communityImageInput');
+            if (imageInput) imageInput.value = '';
+
+            const oldInput = document.getElementById('communityImageInput');
+            if (oldInput) {
+                oldInput.value = '';
+            }
+
             const result = prevCheckAndOpenWriteForImage.apply(this, arguments);
 
             setTimeout(function () {
@@ -992,60 +1048,6 @@
     /*
      * 이미 모달이 열려 있는 상태에서 새로고침 없이 테스트할 수 있도록 수동 호출 가능
      */
-})();
-
-/* =============================================================================
- * community v2 - 연결된 플랜 미리보기 버튼 연결
- * 목적:
- * - 상세 페이지의 연동된 플랜 영역에 미리보기 버튼만 추가
- * - 실제 모달 렌더링은 아래 "플랜 미리보기 지도 최종 보정" 블록에서 처리
- * ============================================================================= */
-
-(function () {
-    'use strict';
-
-    function addPreviewButtonToPlanBadge(post) {
-        const badge = document.getElementById('pr-plan-badge');
-
-        if (!badge || !post || !post.planId) return;
-
-        let btn = document.getElementById('btn-plan-preview');
-
-        if (!btn) {
-            btn = document.createElement('button');
-            btn.id = 'btn-plan-preview';
-            btn.type = 'button';
-            btn.className = 'btn-plan-preview';
-            btn.textContent = '미리보기';
-            btn.onclick = function () {
-                if (typeof window.openCommunityPlanPreview === 'function') {
-                    window.openCommunityPlanPreview();
-                }
-            };
-
-            badge.appendChild(btn);
-        }
-    }
-
-    const prevOpenPostDetailForPreviewButton = window.openPostDetail;
-
-    if (typeof prevOpenPostDetailForPreviewButton === 'function') {
-        window.openPostDetail = async function (postId) {
-            const result = await prevOpenPostDetailForPreviewButton.apply(this, arguments);
-
-            try {
-                const post = window._currentPostDetail;
-
-                if (post) {
-                    addPreviewButtonToPlanBadge(post);
-                }
-            } catch (e) {
-                console.warn('[community-v2] 미리보기 버튼 연결 실패:', e);
-            }
-
-            return result;
-        };
-    }
 })();
 
 /* =============================================================================
@@ -3056,68 +3058,6 @@
         }).join('');
     };
 
-    window.editMyPost = async function (postId) {
-        if (!postId) {
-            if (typeof toast === 'function') toast('게시글 정보를 찾을 수 없습니다.');
-            return;
-        }
-
-        let postRes;
-
-        try {
-            postRes = await requestJson('/api/posts/' + postId, {
-                method: 'GET',
-                headers: authHeaders(false)
-            });
-        } catch (e) {
-            if (typeof toast === 'function') toast(e.message || '게시글 정보를 불러오지 못했습니다.');
-            return;
-        }
-
-        const post = postRes?.data || postRes;
-
-        const newTitle = prompt('수정할 제목을 입력하세요.', post.title || '');
-        if (newTitle === null) return;
-
-        const newContent = prompt('수정할 내용을 입력하세요.', post.content || '');
-        if (newContent === null) return;
-
-        const title = newTitle.trim();
-        const content = newContent.trim();
-
-        if (!title || !content) {
-            if (typeof toast === 'function') toast('제목과 내용을 모두 입력해주세요.');
-            return;
-        }
-
-        const body = {
-            title: title,
-            content: content,
-            styleTags: Array.isArray(post.styleTags)
-                ? post.styleTags.join(',')
-                : (post.styleTags || ''),
-            category: post.category || 'ROUTE',
-            isPublic: post.isPublic ?? true,
-            planId: post.planId || null
-        };
-
-        try {
-            await requestJson('/api/posts/' + postId, {
-                method: 'PATCH',
-                headers: authHeaders(true),
-                body: JSON.stringify(body)
-            });
-
-            if (typeof toast === 'function') toast('후기가 수정되었습니다.');
-
-            await window._renderMyReviews();
-            await reloadCommunityListForCommunityV2();
-
-        } catch (e) {
-            if (typeof toast === 'function') toast(e.message || '수정에 실패했습니다.');
-        }
-    };
-
     window.deleteMyPost = async function (postId) {
         if (!postId) {
             if (typeof toast === 'function') toast('게시글 정보를 찾을 수 없습니다.');
@@ -3882,4 +3822,594 @@
 
         overlay.style.display = 'flex';
     };
+})();
+
+/* =============================================================================
+ * community v2 - 상세 페이지 인라인 수정 모드
+ * 목적:
+ * - 상세 페이지에서 모달 없이 바로 게시글 수정
+ * - 기존 본문 영역을 수정 폼으로 전환
+ * - 기존 이미지 삭제, 새 이미지 추가 지원
+ * ============================================================================= */
+(function () {
+    'use strict';
+
+    let detailEditSelectedImages = [];
+
+    function getAccessToken() {
+        if (typeof Token !== 'undefined' && Token.getAccess) {
+            return Token.getAccess();
+        }
+
+        return localStorage.getItem('accessToken')
+            || localStorage.getItem('access_token')
+            || localStorage.getItem('token')
+            || sessionStorage.getItem('accessToken')
+            || sessionStorage.getItem('access_token')
+            || sessionStorage.getItem('token');
+    }
+
+    function authHeaders(json) {
+        const token = getAccessToken();
+        const headers = {};
+
+        if (json) headers['Content-Type'] = 'application/json';
+        if (token) headers['Authorization'] = 'Bearer ' + token;
+
+        return headers;
+    }
+
+    function escapeHtml(value) {
+        return String(value ?? '')
+            .replaceAll('&', '&amp;')
+            .replaceAll('<', '&lt;')
+            .replaceAll('>', '&gt;')
+            .replaceAll('"', '&quot;')
+            .replaceAll("'", '&#039;');
+    }
+
+    function styleTagsToInput(styleTags) {
+        if (!styleTags) return '';
+
+        if (Array.isArray(styleTags)) {
+            return styleTags.join(', ');
+        }
+
+        try {
+            const parsed = JSON.parse(styleTags);
+            if (Array.isArray(parsed)) return parsed.join(', ');
+        } catch (e) {
+            // JSON이 아니면 그대로 사용
+        }
+
+        return String(styleTags);
+    }
+
+    function inputToStyleTags(value) {
+        return String(value || '')
+            .split(/[\s,]+/)
+            .map(v => v.trim())
+            .filter(Boolean)
+            .join(',');
+    }
+
+    async function requestJson(url, options) {
+        const response = await fetch(url, options);
+
+        let data = null;
+
+        try {
+            data = await response.json();
+        } catch (e) {
+            data = null;
+        }
+
+        if (!response.ok) {
+            throw new Error(data?.message || '요청 처리에 실패했습니다.');
+        }
+
+        return data;
+    }
+
+    function canShowDetailEditButton(post) {
+        // 상세 페이지에서는 로그인 상태면 수정 버튼을 보여준다.
+        return !!getAccessToken() && post && post.postId;
+    }
+
+    function hideOldDetailEditButton() {
+        // 상세 페이지 안에 있는 예전 수정 버튼만 숨긴다.
+        const reviewPage =
+            document.getElementById('page-review') ||
+            document.querySelector('.review-detail') ||
+            document.querySelector('.review-page');
+
+        if (!reviewPage) return;
+
+        reviewPage.querySelectorAll('button').forEach(btn => {
+            const onclick = btn.getAttribute('onclick') || '';
+
+            if (onclick.includes("go('edit-review')") || onclick.includes('go("edit-review")')) {
+                btn.style.display = 'none';
+                btn.onclick = null;
+            }
+        });
+    }
+
+    function ensureDetailEditButton() {
+        hideOldDetailEditButton();
+
+        const post = window._currentPostDetail;
+        if (!post) return;
+
+        const meta = document.getElementById('pr-meta');
+        if (!meta) return;
+
+        let btn = document.getElementById('btn-detail-inline-edit');
+
+        if (!btn) {
+            btn = document.createElement('button');
+            btn.id = 'btn-detail-inline-edit';
+            btn.type = 'button';
+            btn.className = 'btn-f';
+            btn.style.cssText = `
+                margin-left:8px;
+                padding:5px 10px;
+                border-radius:8px;
+                font-size:12px;
+                line-height:1.2;
+                height:28px;
+                width:max-content;
+                align-items:center;
+            `;
+            btn.textContent = '수정';
+            meta.insertAdjacentElement('beforeend', btn);
+        }
+
+        if (!canShowDetailEditButton(post)) {
+            btn.style.display = 'none';
+            btn.onclick = null;
+            return;
+        }
+
+        btn.style.display = 'inline-flex';
+        btn.onclick = function () {
+            startDetailEditMode(post.postId);
+        };
+    }
+
+    async function uploadDetailEditImages() {
+        if (!detailEditSelectedImages.length) return [];
+
+        const formData = new FormData();
+
+        detailEditSelectedImages.forEach(item => {
+            formData.append('files', item.file);
+        });
+
+        const token = getAccessToken();
+
+        const uploadRes = await fetch('/api/posts/images', {
+            method: 'POST',
+            headers: token ? { Authorization: 'Bearer ' + token } : {},
+            body: formData
+        });
+
+        if (!uploadRes.ok) {
+            throw new Error('이미지 업로드에 실패했습니다.');
+        }
+
+        return await uploadRes.json();
+    }
+
+    function renderExistingImagesForEdit(post) {
+        const urls = Array.isArray(post.imageUrls) ? post.imageUrls : [];
+
+        if (!urls.length) {
+            return `
+                <p id="detailEditImageEmpty"
+                   style="color:var(--text3);font-size:13px;margin:6px 0 0">
+                    첨부된 이미지가 없습니다.
+                </p>
+            `;
+        }
+
+        return `
+            <div id="detailEditExistingImages" style="
+                    display:grid;
+                    grid-template-columns:repeat(auto-fill,minmax(120px,120px));
+                    gap:10px;
+                    margin-top:8px;
+                    align-items:start;">
+                ${urls.map(url => `
+                    <div class="detail-edit-image-item"
+                         data-image-url="${escapeHtml(url)}"
+                         style="border:1px solid var(--border);border-radius:12px;overflow:hidden;background:#fff">
+                        <img src="${escapeHtml(url)}"
+                             alt="첨부 이미지"
+                             style="width:100%;height:92px;object-fit:cover;display:block"
+                             onerror="this.style.display='none'">
+
+                        <button type="button"
+                                class="detail-edit-image-delete"
+                                data-image-url="${escapeHtml(url)}"
+                                style="
+                                    width:100%;
+                                    border:none;
+                                    border-top:1px solid var(--border);
+                                    background:#FEF3F2;
+                                    color:var(--coral);
+                                    padding:8px 0;
+                                    font-size:12px;
+                                    font-weight:800;
+                                    cursor:pointer;
+                                ">
+                            이미지 삭제
+                        </button>
+                    </div>
+                `).join('')}
+            </div>
+        `;
+    }
+
+    function bindExistingImageDelete(postId) {
+        document.querySelectorAll('.detail-edit-image-delete').forEach(btn => {
+            btn.onclick = async function () {
+                const imageUrl = this.getAttribute('data-image-url');
+
+                if (!imageUrl) {
+                    if (typeof toast === 'function') toast('이미지 정보를 찾을 수 없습니다.');
+                    return;
+                }
+
+                if (!confirm('이 이미지를 삭제하시겠습니까? 삭제하면 복구할 수 없습니다.')) {
+                    return;
+                }
+
+                try {
+                    await requestJson(
+                        '/api/posts/' + postId + '/images?imageUrl=' + encodeURIComponent(imageUrl),
+                        {
+                            method: 'DELETE',
+                            headers: authHeaders(false)
+                        }
+                    );
+
+                    const item = this.closest('.detail-edit-image-item');
+                    if (item) item.remove();
+
+                    if (typeof toast === 'function') toast('이미지가 삭제되었습니다.');
+                } catch (e) {
+                    if (typeof toast === 'function') toast(e.message || '이미지 삭제에 실패했습니다.');
+                }
+            };
+        });
+    }
+
+    function bindNewImageInput() {
+        const btn = document.getElementById('detailEditAddImageBtn');
+        const input = document.getElementById('detailEditImageInput');
+        const preview = document.getElementById('detailEditNewImagePreview');
+
+        if (!btn || !input || !preview) return;
+
+        btn.onclick = function () {
+            input.click();
+        };
+
+        input.onchange = function (e) {
+            const files = [...(e.target.files || [])];
+
+            files.forEach(file => {
+                if (!file.type.startsWith('image/')) {
+                    if (typeof toast === 'function') toast('이미지 파일만 추가할 수 있습니다.');
+                    return;
+                }
+
+                const itemId = 'detail-edit-img-' + Date.now() + '-' + Math.random().toString(16).slice(2);
+
+                detailEditSelectedImages.push({
+                    id: itemId,
+                    file: file
+                });
+
+                const reader = new FileReader();
+
+                reader.onload = function (event) {
+                    const card = document.createElement('div');
+                    card.id = itemId;
+                    card.style.cssText = `
+                        border:1px solid var(--border);
+                        border-radius:12px;
+                        overflow:hidden;
+                        background:#fff;
+                    `;
+
+                    card.innerHTML = `
+                        <img src="${event.target.result}"
+                             alt="새 이미지"
+                             style="width:100%;height:92px;object-fit:cover;display:block">
+
+                        <button type="button"
+                                style="
+                                    width:100%;
+                                    border:none;
+                                    border-top:1px solid var(--border);
+                                    background:#F8FAF9;
+                                    color:var(--text2);
+                                    padding:8px 0;
+                                    font-size:12px;
+                                    font-weight:800;
+                                    cursor:pointer;
+                                ">
+                            추가 취소
+                        </button>
+                    `;
+
+                    card.querySelector('button').onclick = function () {
+                        detailEditSelectedImages = detailEditSelectedImages.filter(img => img.id !== itemId);
+                        card.remove();
+                    };
+
+                    preview.appendChild(card);
+                };
+
+                reader.readAsDataURL(file);
+            });
+
+            e.target.value = '';
+        };
+    }
+
+    async function startDetailEditMode(postId) {
+        if (!postId) return;
+
+        let post;
+
+        try {
+            const res = await requestJson('/api/posts/' + postId, {
+                method: 'GET',
+                headers: authHeaders(false)
+            });
+
+            post = res?.data || res;
+        } catch (e) {
+            if (typeof toast === 'function') toast(e.message || '게시글 정보를 불러오지 못했습니다.');
+            return;
+        }
+
+        if (!post || !post.postId) {
+            if (typeof toast === 'function') toast('게시글 정보를 찾을 수 없습니다.');
+            return;
+        }
+
+        detailEditSelectedImages = [];
+
+        const titleEl = document.getElementById('pr-title');
+        const bodyEl = document.getElementById('pr-body');
+        const planBadge = document.getElementById('pr-plan-badge');
+        const placeList = document.getElementById('pr-place-list');
+        const comments = document.getElementById('pr-comments');
+
+        const editBtn = document.getElementById('btn-detail-inline-edit');
+        const reviewCta = document.querySelector('.review-cta');
+
+        hideOldDetailEditButton();
+
+        if (editBtn) editBtn.style.display = 'none';
+        if (reviewCta) reviewCta.style.display = 'none';
+
+        if (!titleEl || !bodyEl) {
+            if (typeof toast === 'function') toast('수정 영역을 찾지 못했습니다.');
+            return;
+        }
+
+        titleEl.innerHTML = `
+            <input id="detailEditTitle"
+                   type="text"
+                   value="${escapeHtml(post.title || '')}"
+                   style="
+                        width:100%;
+                        padding:12px 14px;
+                        border-radius:12px;
+                        border:1.5px solid var(--border2);
+                        font-size:22px;
+                        font-weight:800;
+                        box-sizing:border-box;
+                   ">
+        `;
+
+        if (planBadge) planBadge.style.display = 'none';
+        if (placeList) placeList.style.display = 'none';
+        if (comments) comments.style.display = 'none';
+
+        bodyEl.innerHTML = `
+            <div class="detail-inline-edit-box"
+                 style="display:flex;flex-direction:column;gap:14px">
+
+                <div>
+                    <label style="display:block;font-size:13px;font-weight:800;margin-bottom:6px;color:var(--text2)">
+                        카테고리
+                    </label>
+                    <select id="detailEditCategory"
+                            style="width:100%;padding:11px 12px;border-radius:10px;border:1.5px solid var(--border2)">
+                        <option value="ROUTE">여행 경로</option>
+                        <option value="STAY">숙소</option>
+                        <option value="FOOD">맛집</option>
+                        <option value="TOUR">관광지</option>
+                        <option value="CAFE">카페</option>
+                    </select>
+                </div>
+
+                <div>
+                    <label style="display:block;font-size:13px;font-weight:800;margin-bottom:6px;color:var(--text2)">
+                        태그
+                    </label>
+                    <input id="detailEditTags"
+                           type="text"
+                           value="${escapeHtml(styleTagsToInput(post.styleTags))}"
+                           placeholder="예: 힐링, 제주, 맛집"
+                           style="width:100%;padding:11px 12px;border-radius:10px;border:1.5px solid var(--border2);box-sizing:border-box">
+                </div>
+
+                <div>
+                    <label style="display:block;font-size:13px;font-weight:800;margin-bottom:6px;color:var(--text2)">
+                        내용
+                    </label>
+                    <textarea id="detailEditContent"
+                              style="width:100%;min-height:240px;padding:12px 14px;border-radius:12px;border:1.5px solid var(--border2);line-height:1.7;resize:vertical;box-sizing:border-box">${escapeHtml(post.content || '')}</textarea>
+                </div>
+
+                <div>
+                    <label style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--text2);cursor:pointer">
+                        <input id="detailEditPublic" type="checkbox">
+                        공개글로 설정
+                    </label>
+                </div>
+
+                <div>
+                    <label style="display:block;font-size:13px;font-weight:800;margin-bottom:6px;color:var(--text2)">
+                        기존 이미지
+                    </label>
+                    ${renderExistingImagesForEdit(post)}
+                </div>
+
+                <div>
+                    <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+                        <label style="font-size:13px;font-weight:800;color:var(--text2)">
+                            새 이미지
+                        </label>
+                
+                        <button type="button"
+                                id="detailEditAddImageBtn"
+                                class="btn-prev-step"
+                                style="padding:7px 12px;border-radius:10px;font-size:12px">
+                            이미지 추가
+                        </button>
+                    </div>
+                
+                    <input id="detailEditImageInput"
+                           type="file"
+                           accept="image/*"
+                           multiple
+                           style="display:none">
+                
+                    <div id="detailEditNewImagePreview"
+                         style="
+                            display:grid;
+                            grid-template-columns:repeat(auto-fill,minmax(120px,120px));
+                            gap:10px;
+                            margin-top:10px;
+                            align-items:start;
+                         "></div>
+                </div>
+
+                <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:8px">
+                    <button type="button"
+                            id="detailEditCancelBtn"
+                            class="btn-prev-step"
+                            style="padding:11px 18px;border-radius:10px">
+                        취소
+                    </button>
+
+                    <button type="button"
+                            id="detailEditSaveBtn"
+                            class="btn-f"
+                            style="padding:11px 22px;border-radius:10px">
+                        저장
+                    </button>
+                </div>
+            </div>
+        `;
+
+        document.getElementById('detailEditCategory').value = post.category || 'ROUTE';
+        document.getElementById('detailEditPublic').checked = post.isPublic !== false;
+
+        bindExistingImageDelete(post.postId);
+        bindNewImageInput();
+
+        document.getElementById('detailEditCancelBtn').onclick = function () {
+            const reviewCta = document.querySelector('.review-cta');
+            if (reviewCta) reviewCta.style.display = '';
+
+            if (typeof window.openPostDetail === 'function') {
+                window.openPostDetail(post.postId);
+            }
+        };
+
+        document.getElementById('detailEditSaveBtn').onclick = async function () {
+            await saveDetailEdit(post.postId, post);
+        };
+    }
+
+    async function saveDetailEdit(postId, originalPost) {
+        const title = document.getElementById('detailEditTitle')?.value.trim();
+        const content = document.getElementById('detailEditContent')?.value.trim();
+        const category = document.getElementById('detailEditCategory')?.value || 'ROUTE';
+        const tags = document.getElementById('detailEditTags')?.value || '';
+        const isPublic = !!document.getElementById('detailEditPublic')?.checked;
+
+        if (!title || !content) {
+            if (typeof toast === 'function') toast('제목과 내용을 입력해주세요.');
+            return;
+        }
+
+        let uploadedImageUrls = [];
+
+        try {
+            uploadedImageUrls = await uploadDetailEditImages();
+        } catch (e) {
+            if (typeof toast === 'function') toast(e.message || '이미지 업로드에 실패했습니다.');
+            return;
+        }
+
+        const body = {
+            title: title,
+            content: content,
+            styleTags: inputToStyleTags(tags),
+            category: category,
+            isPublic: isPublic,
+            planId: originalPost?.planId || null,
+            imageUrls: uploadedImageUrls
+        };
+
+        try {
+            await requestJson('/api/posts/' + postId, {
+                method: 'PATCH',
+                headers: authHeaders(true),
+                body: JSON.stringify(body)
+            });
+
+            if (typeof toast === 'function') toast('후기가 수정되었습니다.');
+
+            const reviewCta = document.querySelector('.review-cta');
+            if (reviewCta) reviewCta.style.display = '';
+
+            detailEditSelectedImages = [];
+
+            if (typeof window.loadCommunityPosts === 'function') {
+                await window.loadCommunityPosts(0, true);
+            }
+
+            if (typeof window.openPostDetail === 'function') {
+                await window.openPostDetail(postId);
+            }
+        } catch (e) {
+            if (typeof toast === 'function') toast(e.message || '수정에 실패했습니다.');
+        }
+    }
+
+    const prevOpenPostDetailForInlineEdit = window.openPostDetail;
+
+    if (typeof prevOpenPostDetailForInlineEdit === 'function') {
+        window.openPostDetail = async function (postId) {
+            const result = await prevOpenPostDetailForInlineEdit.apply(this, arguments);
+
+            setTimeout(ensureDetailEditButton, 100);
+            setTimeout(ensureDetailEditButton, 300);
+
+            return result;
+        };
+    }
+
+    window.startDetailEditMode = startDetailEditMode;
 })();
