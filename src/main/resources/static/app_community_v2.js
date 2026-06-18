@@ -2178,3 +2178,450 @@
         window.loadCommunitySidePanels();
     }, 300);
 })();
+
+/* =============================================================================
+ * community v2 - 장소형 상세 화면 분기
+ * 목적:
+ * - ROUTE 게시글은 기존 여행 경로 상세 유지
+ * - STAY / FOOD / TOUR / CAFE 게시글은 장소형 상세 화면으로 보정
+ * - 기존 상세 렌더링 코드를 직접 수정하지 않고 마지막 단계에서 덮어쓰기
+ * ============================================================================= */
+
+(function () {
+    'use strict';
+
+    function escapeHtml(value) {
+        return String(value ?? '')
+            .replaceAll('&', '&amp;')
+            .replaceAll('<', '&lt;')
+            .replaceAll('>', '&gt;')
+            .replaceAll('"', '&quot;')
+            .replaceAll("'", '&#039;');
+    }
+
+    function parseStyleTags(styleTags) {
+        if (!styleTags) return [];
+
+        if (Array.isArray(styleTags)) {
+            return styleTags.map(v => String(v).trim()).filter(Boolean);
+        }
+
+        try {
+            const parsed = JSON.parse(styleTags);
+            if (Array.isArray(parsed)) {
+                return parsed.map(v => String(v).trim()).filter(Boolean);
+            }
+        } catch (e) {
+            // JSON 문자열이 아니면 쉼표 문자열로 처리
+        }
+
+        return String(styleTags)
+            .split(',')
+            .map(v => v.trim())
+            .filter(Boolean);
+    }
+
+    function normalizeCategory(category) {
+        if (!category || String(category).trim() === '') return 'ROUTE';
+
+        const value = String(category).toUpperCase();
+
+        if (['ROUTE', 'STAY', 'FOOD', 'TOUR', 'CAFE'].includes(value)) {
+            return value;
+        }
+
+        return 'ROUTE';
+    }
+
+    function getCategoryInfo(category) {
+        const map = {
+            STAY: {
+                label: '숙소',
+                icon: '🏨',
+                typeLabel: '숙소 유형',
+                typeValue: '감성 숙소',
+                priceLabel: '1박 예상 가격',
+                priceValue: '₩80,000~',
+                scoreLabel: '숙박 만족도',
+                pointTitle: '숙소 이용 포인트',
+                reviewTitle: '숙소 방문 후기'
+            },
+            FOOD: {
+                label: '맛집',
+                icon: '🍽',
+                typeLabel: '음식 종류',
+                typeValue: '로컬 맛집',
+                priceLabel: '1인 예상 가격',
+                priceValue: '₩12,000~',
+                scoreLabel: '맛 만족도',
+                pointTitle: '맛집 이용 포인트',
+                reviewTitle: '맛집 방문 후기'
+            },
+            TOUR: {
+                label: '관광지',
+                icon: '📍',
+                typeLabel: '관광지 유형',
+                typeValue: '명소',
+                priceLabel: '입장료',
+                priceValue: '정보 없음',
+                scoreLabel: '방문 만족도',
+                pointTitle: '관광지 이용 포인트',
+                reviewTitle: '관광지 방문 후기'
+            },
+            CAFE: {
+                label: '카페',
+                icon: '☕',
+                typeLabel: '카페 유형',
+                typeValue: '분위기 좋은 카페',
+                priceLabel: '대표 메뉴 가격',
+                priceValue: '₩5,000~',
+                scoreLabel: '카페 만족도',
+                pointTitle: '카페 이용 포인트',
+                reviewTitle: '카페 방문 후기'
+            }
+        };
+
+        return map[category] || {
+            label: '여행 경로',
+            icon: '🧳'
+        };
+    }
+
+    function getShortContent(content) {
+        const text = String(content || '').replace(/\s+/g, ' ').trim();
+
+        if (!text) {
+            return '작성자가 남긴 장소 후기를 바탕으로 정리한 추천 정보입니다.';
+        }
+
+        return text.length > 90 ? text.substring(0, 90) + '...' : text;
+    }
+
+    function getKeywordText(tags, fallback) {
+        if (tags.length) {
+            return tags.slice(0, 3).map(tag => `#${tag}`).join(' ');
+        }
+
+        return fallback;
+    }
+
+    function renderPlaceTypeDetail(post) {
+        const category = normalizeCategory(post.category);
+        if (category === 'ROUTE') return;
+
+        const info = getCategoryInfo(category);
+        const tags = parseStyleTags(post.styleTags);
+        const title = post.title || `${info.label} 후기`;
+        const content = post.content || '';
+
+        /*
+         * 여행 경로 전용 영역 숨김
+         */
+        const planBadge = document.getElementById('pr-plan-badge');
+        const placeList = document.getElementById('pr-place-list');
+        const ctaSub = document.getElementById('pr-cta-sub');
+
+        if (planBadge) {
+            planBadge.style.display = 'none';
+        }
+
+        if (placeList) {
+            placeList.style.display = 'none';
+        }
+
+        if (ctaSub) {
+            ctaSub.textContent = `${info.label} 후기를 참고해 나에게 맞는 여행 장소를 찾아보세요.`;
+        }
+
+        /*
+         * 상단 카테고리 라벨 보정
+         */
+        const catEl = document.getElementById('pr-cat');
+        if (catEl) {
+            catEl.textContent = info.label;
+        }
+
+        /*
+         * 기존 장소형 패널 중복 제거
+         */
+        const oldPanel = document.getElementById('community-place-detail-panel');
+        if (oldPanel) oldPanel.remove();
+
+        const body = document.getElementById('pr-body');
+        if (!body) return;
+
+        const panel = document.createElement('div');
+        panel.id = 'community-place-detail-panel';
+        panel.className = 'community-place-detail-panel';
+
+        panel.innerHTML = `
+            <div class="place-detail-hero">
+                <div class="place-detail-icon">${escapeHtml(info.icon)}</div>
+
+                <div class="place-detail-main">
+                    <div class="place-detail-label">${escapeHtml(info.label)} 후기</div>
+                    <h3>${escapeHtml(title)}</h3>
+                    <p>${escapeHtml(getShortContent(content))}</p>
+
+                    <div class="place-detail-tags">
+                        ${tags.length
+            ? tags.slice(0, 5).map(tag => `<span>#${escapeHtml(tag)}</span>`).join('')
+            : `<span>#${escapeHtml(info.label)}</span><span>#추천</span>`
+        }
+                    </div>
+                </div>
+            </div>
+
+            <div class="place-detail-summary-grid">
+                <div class="place-summary-card">
+                    <span>${escapeHtml(info.typeLabel)}</span>
+                    <strong>${escapeHtml(getKeywordText(tags, info.typeValue))}</strong>
+                </div>
+
+                <div class="place-summary-card">
+                    <span>${escapeHtml(info.priceLabel)}</span>
+                    <strong>${escapeHtml(info.priceValue)}</strong>
+                </div>
+
+                <div class="place-summary-card">
+                    <span>${escapeHtml(info.scoreLabel)}</span>
+                    <strong>★★★★☆ 4.5</strong>
+                </div>
+            </div>
+
+            <div class="place-review-box">
+                <div class="place-review-box-head">
+                    <h3>${escapeHtml(info.reviewTitle)}</h3>
+                    <span>평균 평점 4.5</span>
+                </div>
+
+                <div class="place-review-row">
+                    <div class="place-review-avatar">${escapeHtml((post.writerName || 'U').substring(0, 1))}</div>
+                    <div>
+                        <strong>${escapeHtml(post.writerName || '사용자')}</strong>
+                        <p>${escapeHtml(getShortContent(content))}</p>
+                    </div>
+                    <em>★★★★☆</em>
+                </div>
+
+                <div class="place-review-row">
+                    <div class="place-review-avatar">T</div>
+                    <div>
+                        <strong>TripLinker 추천 포인트</strong>
+                        <p>${escapeHtml(info.pointTitle)}가 잘 드러나는 후기입니다. ${escapeHtml(getKeywordText(tags, info.label))}</p>
+                    </div>
+                    <em>★★★★☆</em>
+                </div>
+            </div>
+        `;
+
+        /*
+         * 본문 위에 장소형 요약 패널 삽입
+         */
+        body.insertAdjacentElement('beforebegin', panel);
+    }
+
+    async function applyPlaceTypeDetail(postId) {
+        if (!postId) return;
+
+        const res = await api.get(`/api/posts/${postId}`);
+
+        if (!res || res.success === false || !res.data) return;
+
+        const post = res.data;
+        const category = normalizeCategory(post.category);
+
+        /*
+         * ROUTE면 장소형 패널 제거 후 기존 여행 경로 상세 유지
+         */
+        if (category === 'ROUTE') {
+            const oldPanel = document.getElementById('community-place-detail-panel');
+            if (oldPanel) oldPanel.remove();
+            return;
+        }
+
+        renderPlaceTypeDetail(post);
+    }
+
+    const prevOpenPostDetailForPlaceType = window.openPostDetail;
+
+    if (typeof prevOpenPostDetailForPlaceType === 'function') {
+        window.openPostDetail = async function (postId) {
+            const result = await prevOpenPostDetailForPlaceType.apply(this, arguments);
+
+            try {
+                await applyPlaceTypeDetail(postId);
+            } catch (e) {
+                console.warn('[community-v2] 장소형 상세 화면 분기 실패:', e);
+            }
+
+            return result;
+        };
+    }
+})();
+
+/* =============================================================================
+ * community v2 - 카테고리별 목록/페이징 분리 보정
+ * 목적:
+ * - route/stay/food/tour/cafe 탭마다 /api/posts?category=...로 조회
+ * - 여행 경로 페이징이 다른 카테고리에 공유되는 문제 방지
+ * - 돌아오기 후 다른 카테고리 목록이 사라지는 문제 방지
+ * ============================================================================= */
+
+(function () {
+    'use strict';
+
+    const tabTextToKey = {
+        '여행 경로': 'route',
+        '숙소': 'stay',
+        '맛집': 'food',
+        '관광지': 'tour',
+        '카페': 'cafe'
+    };
+
+    function getCurrentTabKey() {
+        const activeTab = document.querySelector('#commTabs .comm-tab.on');
+
+        if (activeTab) {
+            const text = activeTab.textContent.trim();
+            if (tabTextToKey[text]) return tabTextToKey[text];
+        }
+
+        if (typeof _commState !== 'undefined' && _commState.currentTab) {
+            return _commState.currentTab;
+        }
+
+        return 'route';
+    }
+
+    function extractPage(res) {
+        const page = res?.data || res || {};
+
+        return {
+            content: Array.isArray(page.content) ? page.content : [],
+            number: Number(page.number ?? 0),
+            totalPages: Number(page.totalPages ?? 1),
+            totalElements: Number(page.totalElements ?? 0)
+        };
+    }
+
+    function removeCommunityV2Pager() {
+        const old = document.getElementById('community-v2-pagination');
+        if (old) old.remove();
+    }
+
+    function renderCommunityV2Pager(tab, pageNumber, totalPages) {
+        removeCommunityV2Pager();
+
+        const tabEl = document.getElementById('tab-' + tab);
+        if (!tabEl) return;
+
+        if (!totalPages || totalPages <= 1) {
+            return;
+        }
+
+        const pager = document.createElement('div');
+        pager.id = 'community-v2-pagination';
+        pager.className = 'community-v2-pagination';
+
+        let html = '';
+
+        for (let i = 0; i < totalPages; i++) {
+            html += `
+                <button type="button"
+                        class="community-v2-page-btn ${i === pageNumber ? 'on' : ''}"
+                        data-page="${i}">
+                    ${i + 1}
+                </button>
+            `;
+        }
+
+        pager.innerHTML = html;
+
+        pager.querySelectorAll('.community-v2-page-btn').forEach(btn => {
+            btn.addEventListener('click', function () {
+                const nextPage = Number(this.dataset.page || 0);
+                window.loadCommunityPosts(nextPage, true);
+            });
+        });
+
+        tabEl.insertAdjacentElement('afterend', pager);
+    }
+
+    window.loadCommunityPosts = async function (page = 0, reset = true) {
+        const tab = getCurrentTabKey();
+
+        if (typeof _commState !== 'undefined') {
+            _commState.currentTab = tab;
+            _commState.page = page;
+        }
+
+        const tabEl = document.getElementById('tab-' + tab);
+
+        if (tabEl && reset) {
+            tabEl.innerHTML = `
+                <div style="padding:40px 20px;text-align:center;color:var(--text3);font-size:14px">
+                    불러오는 중...
+                </div>
+            `;
+        }
+
+        try {
+            const res = await api.get(
+                `/api/posts?page=${page}&size=10&sort=scrap&category=${tab}`
+            );
+
+            const pageData = extractPage(res);
+
+            if (typeof window._renderPostList === 'function') {
+                window._renderPostList(pageData.content, true);
+            }
+
+            renderCommunityV2Pager(tab, pageData.number, pageData.totalPages);
+
+            if (typeof window.loadCommunitySidePanels === 'function') {
+                window.loadCommunitySidePanels();
+            }
+        } catch (e) {
+            console.error('[community-v2] 카테고리 목록 조회 실패:', e);
+
+            if (tabEl) {
+                tabEl.innerHTML = `
+                    <div style="padding:40px 20px;text-align:center;color:var(--coral);font-size:14px">
+                        게시글을 불러오지 못했습니다.
+                    </div>
+                `;
+            }
+
+            removeCommunityV2Pager();
+        }
+    };
+
+    function wrapSetCommTabForList() {
+        if (typeof window.setCommTab !== 'function') return;
+        if (window.setCommTab.__communityV2ListWrapped) return;
+
+        const originalSetCommTab = window.setCommTab;
+
+        window.setCommTab = function (btn, cat) {
+            const result = originalSetCommTab.apply(this, arguments);
+
+            if (typeof _commState !== 'undefined') {
+                _commState.currentTab = cat || 'route';
+                _commState.page = 0;
+            }
+
+            setTimeout(function () {
+                window.loadCommunityPosts(0, true);
+            }, 50);
+
+            return result;
+        };
+
+        window.setCommTab.__communityV2ListWrapped = true;
+    }
+
+    setTimeout(wrapSetCommTabForList, 300);
+    setTimeout(wrapSetCommTabForList, 800);
+    setTimeout(wrapSetCommTabForList, 1500);
+})();

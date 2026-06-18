@@ -962,3 +962,229 @@
     color: var(--text3);
     font-size: 12px;
 }
+
+/* =========================================================
+ * community v2 - 장소형 상세 화면
+ * ========================================================= */
+
+#community-place-detail-panel {
+    max-width: 860px;
+    margin: 18px auto 24px;
+}
+
+.place-detail-hero {
+    display: flex;
+    gap: 18px;
+    align-items: flex-start;
+    background: #fff;
+    border: 1px solid var(--border2);
+    border-radius: 22px;
+    padding: 22px;
+    box-shadow: var(--sh, 0 8px 24px rgba(0, 0, 0, .08));
+}
+
+.place-detail-icon {
+    width: 54px;
+    height: 54px;
+    border-radius: 18px;
+    background: var(--sage-pale);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 26px;
+    flex-shrink: 0;
+}
+
+.place-detail-main {
+    flex: 1;
+    min-width: 0;
+}
+
+.place-detail-label {
+    color: var(--sage-d);
+    font-size: 12px;
+    font-weight: 900;
+    margin-bottom: 6px;
+}
+
+.place-detail-main h3 {
+    color: var(--text1);
+    font-size: 20px;
+    font-weight: 900;
+    margin-bottom: 8px;
+}
+
+.place-detail-main p {
+    color: var(--text2);
+    font-size: 14px;
+    line-height: 1.65;
+    margin-bottom: 12px;
+}
+
+.place-detail-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.place-detail-tags span {
+    background: var(--sage-pale);
+    color: var(--sage-d);
+    border-radius: 999px;
+    padding: 5px 10px;
+    font-size: 11px;
+    font-weight: 800;
+}
+
+.place-detail-summary-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 12px;
+    margin-top: 14px;
+}
+
+.place-summary-card {
+    background: #fff;
+    border: 1px solid var(--border2);
+    border-radius: 18px;
+    padding: 16px;
+}
+
+.place-summary-card span {
+    display: block;
+    color: var(--text3);
+    font-size: 12px;
+    font-weight: 700;
+    margin-bottom: 6px;
+}
+
+.place-summary-card strong {
+    color: var(--text1);
+    font-size: 15px;
+    font-weight: 900;
+}
+
+.place-review-box {
+    background: #fff;
+    border: 1px solid var(--border2);
+    border-radius: 22px;
+    padding: 20px;
+    margin-top: 14px;
+    box-shadow: var(--sh, 0 8px 24px rgba(0, 0, 0, .08));
+}
+
+.place-review-box-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 14px;
+}
+
+.place-review-box-head h3 {
+    color: var(--text1);
+    font-size: 16px;
+    font-weight: 900;
+}
+
+.place-review-box-head span {
+    color: var(--sage-d);
+    background: var(--sage-pale);
+    border-radius: 999px;
+    padding: 6px 10px;
+    font-size: 12px;
+    font-weight: 800;
+}
+
+.place-review-row {
+    display: grid;
+    grid-template-columns: 38px 1fr auto;
+    gap: 12px;
+    align-items: start;
+    padding: 13px 0;
+    border-top: 1px solid var(--border2);
+}
+
+.place-review-row:first-of-type {
+    border-top: none;
+}
+
+.place-review-avatar {
+    width: 38px;
+    height: 38px;
+    border-radius: 50%;
+    background: var(--sage);
+    color: #fff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 900;
+}
+
+.place-review-row strong {
+    color: var(--text1);
+    font-size: 13px;
+    font-weight: 900;
+}
+
+.place-review-row p {
+    color: var(--text2);
+    font-size: 13px;
+    line-height: 1.55;
+    margin-top: 4px;
+}
+
+.place-review-row em {
+    color: #f5a623;
+    font-style: normal;
+    font-size: 12px;
+    font-weight: 900;
+    white-space: nowrap;
+}
+
+@media (max-width: 760px) {
+    .place-detail-hero {
+        flex-direction: column;
+    }
+
+    .place-detail-summary-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .place-review-row {
+        grid-template-columns: 34px 1fr;
+    }
+
+    .place-review-row em {
+        grid-column: 2;
+    }
+}
+
+/* =========================================================
+ * community v2 - 카테고리별 페이징
+ * ========================================================= */
+
+.community-v2-pagination {
+    display: flex;
+    justify-content: center;
+    gap: 8px;
+    margin: 18px 0 30px;
+}
+
+.community-v2-page-btn {
+    width: 34px;
+    height: 34px;
+    border-radius: 10px;
+    border: 1px solid var(--border2);
+    background: #fff;
+    color: var(--text2);
+    font-size: 13px;
+    font-weight: 800;
+    cursor: pointer;
+}
+
+.community-v2-page-btn.on {
+    background: var(--sage);
+    color: #fff;
+    border-color: var(--sage);
+}
