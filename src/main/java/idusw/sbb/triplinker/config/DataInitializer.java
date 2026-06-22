@@ -47,8 +47,6 @@ public class DataInitializer implements CommandLineRunner {
     private final PostCommentRepository postCommentRepository;
     private final ReportRepository reportRepository;
 
-    private final ExpenseRepository expenseRepository;
-
 
     @Override
     public void run(String... args) {
@@ -909,21 +907,6 @@ public class DataInitializer implements CommandLineRunner {
         reportRepository.save(resReport3);
 
         log.info("신고 데이터 9건(미처리3+반려3+처리완료3)이 생성되었습니다.");
-    }
-
-    // 플랜의 예상 비용 일괄 저장
-    private void saveEstimatedExpenses(TravelPlan plan, User user, Object[][] rows) {
-        for (Object[] row : rows) {
-            expenseRepository.save(Expense.builder()
-                    .plan(plan)
-                    .user(user)
-                    .category((String) row[0])
-                    .description((String) row[1])
-                    .amount((Long) row[2])
-                    .isEstimated(true)
-                    .expenseDate(plan.getStartDate().plusDays((int) row[3]))
-                    .build());
-        }
     }
 
     // 플랜의 예상 비용 일괄 저장
