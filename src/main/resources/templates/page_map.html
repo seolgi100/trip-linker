@@ -66,6 +66,24 @@
     const MAP_TOTAL_BUDGET_DISPLAY = '₩ 404,000';
 
 
+    // ── nav 실제 높이 → --nav-h 변수 갱신 (탭 잘림 방지) ──
+    // DOMContentLoaded 한 번만으론 부족 — nav 내용이 JS로 나중에 주입되므로
+    // ResizeObserver로 nav 크기 변화를 실시간 감지해서 갱신
+    function syncNavHeight() {
+      var nav = document.querySelector('nav');
+      if (nav) {
+        document.documentElement.style.setProperty('--nav-h', nav.offsetHeight + 'px');
+      }
+    }
+    document.addEventListener('DOMContentLoaded', function() {
+      syncNavHeight();
+      var nav = document.querySelector('nav');
+      if (nav && window.ResizeObserver) {
+        new ResizeObserver(syncNavHeight).observe(nav);
+      }
+    });
+    window.addEventListener('resize', syncNavHeight);
+
     // ── 모바일 탭 전환 ──
     function switchMobileMapTab(tab) {
       var left = document.querySelector('.map-left');
