@@ -1,0 +1,82 @@
+/* =============================================================================
+ * TripLinker - 지도 반응형 (styles_responsive_map.css)
+ * ============================================================================= */
+
+/* 모바일 탭 바 - 데스크탑에서는 숨김 */
+.map-mobile-tabs { display: none; }
+
+/* ≤1024px */
+@media (max-width: 1024px) {
+    .map-wrap { grid-template-columns: 260px 1fr; }
+}
+
+/* ≤768px */
+@media (max-width: 768px) {
+
+    /* 전체 래퍼: flex 세로 스택, 전체 높이 고정 */
+    .map-wrap {
+        display: flex;
+        flex-direction: column;
+        height: calc(100vh - 72px);
+    }
+
+    /* 모바일 탭 바 표시 */
+    .map-mobile-tabs {
+        display: flex;
+        flex-shrink: 0;
+        background: var(--surface);
+        border-bottom: 1px solid var(--border2);
+    }
+
+    .map-mob-tab {
+        flex: 1;
+        padding: 11px;
+        border: none;
+        border-bottom: 2px solid transparent;
+        background: none;
+        font-size: 13px;
+        font-weight: 700;
+        color: var(--text3);
+        cursor: pointer;
+        transition: color .15s;
+    }
+
+    .map-mob-tab.on {
+        color: var(--sage-d);
+        border-bottom-color: var(--sage);
+    }
+
+    /* 각 패널: 남은 높이 전체 차지 */
+    .map-left {
+        flex: 1;
+        max-height: none;
+        border-right: none;
+        border-bottom: none;
+        overflow-y: auto;
+    }
+
+    .map-right {
+        flex: 1;
+    }
+
+    /* 숨긴 패널 */
+    .map-left.mob-hidden,
+    .map-right.mob-hidden {
+        display: none;
+    }
+
+    /* 하단 지도/예산 버튼 숨기고 공유만 전체 너비 */
+    #mapTabMap,
+    #mapTabBudget {
+        display: none;
+    }
+
+    .map-acts .btn-map-act:last-child {
+        flex: 1;
+    }
+}
+
+/* 가로 모드 짧은 화면 (가로 폰) */
+@media (max-height: 500px) and (orientation: landscape) {
+    .map-wrap { height: 80vh; }
+}
