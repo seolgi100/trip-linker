@@ -104,7 +104,7 @@ public class AuthServiceImpl implements AuthService {
 
     @Override
     public TokenResponseDto refresh(String refreshToken) {
-        RefreshToken saved = refreshTokenRepository.findByTokenHash(refreshToken)
+        RefreshToken saved = refreshTokenRepository.findByTokenHash(hashSha256(refreshToken))
                 .orElseThrow(() -> new IllegalArgumentException("유효하지 않은 토큰입니다."));
 
         if (saved.getExpiresAt().isBefore(LocalDateTime.now())) {
@@ -112,7 +112,11 @@ public class AuthServiceImpl implements AuthService {
             throw new IllegalStateException("토큰이 만료되었습니다. 다시 로그인해주세요.");
         }
 
-        return new TokenResponseDto("new-access-token-placeholder", refreshToken, false);
+        User user = userRepository.findById(saved.getUserId())
+                .orElseThrow(() -> new IllegalArgumentException("유저를 찾을 수 없습니다."));
+        String newAccessToken = jwtProvider.createAccessToken(saved.getUserId(), user.getRole());
+
+        return new TokenResponseDto(newAccessToken, refreshToken, false);
     }
 
     @Override
