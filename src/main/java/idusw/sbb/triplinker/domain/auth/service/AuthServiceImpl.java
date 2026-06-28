@@ -85,10 +85,16 @@ public class AuthServiceImpl implements AuthService {
         refreshTokenRepository.save(tokenEntity);
 
         // 90일 비밀번호 변경 권장 체크
+        // - lastPwChangedAt 기준 90일 경과 AND
+        // - pwChangeNotiAt 가 없거나 30일 이상 지났을 때만 모달 표시 (스누즈 30일)
         boolean pwChangeRecommended = false;
         if (user.getLastPwChangedAt() != null) {
-            long days = ChronoUnit.DAYS.between(user.getLastPwChangedAt(), LocalDateTime.now());
-            pwChangeRecommended = days >= 90;
+            long daysSinceChange = ChronoUnit.DAYS.between(user.getLastPwChangedAt(), LocalDateTime.now());
+            if (daysSinceChange >= 90) {
+                boolean snoozed = user.getPwChangeNotiAt() != null
+                        && ChronoUnit.DAYS.between(user.getPwChangeNotiAt(), LocalDateTime.now()) < 30;
+                pwChangeRecommended = !snoozed;
+            }
         }
 
         // 최종 응답 반환
@@ -128,6 +134,15 @@ public class AuthServiceImpl implements AuthService {
     @Override
     public void logout(Long userId) {
         refreshTokenRepository.deleteByUserId(userId);
+    }
+
+    @Override
+    @Transactional
+    public void recordPwChangeNoti(Long userId) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new IllegalArgumentException("유저를 찾을 수 없습니다."));
+        user.recordPwChangeNotified();
+        userRepository.save(user);
     }
 
     @Override
