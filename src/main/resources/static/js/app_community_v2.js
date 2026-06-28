@@ -1231,15 +1231,36 @@
             return;
         }
 
-        const postId = window._reportPostId || window._currentPostId;
-        const res = await api.post(`/api/posts/${postId}/reports`, { postId, reason });
+        if (window._reportPostSubmitting) return;
+        window._reportPostSubmitting = true;
 
-        const modal = document.getElementById('reportPostModal');
-        if (modal) modal.style.display = 'none';
-        window._reportPostId = null;
+        try {
+            const postId = window._reportPostId || window._currentPostId;
+            const res = await api.post(`/api/posts/${postId}/reports`, {
+                postId,
+                reason,
+                commentId: null
+            });
 
-        if (typeof toast === 'function') {
-            toast(res?.success !== false ? '🚨 신고가 접수되었습니다.' : res?.message || '신고 처리에 실패했습니다.');
+            const modal = document.getElementById('reportPostModal');
+            if (modal) modal.style.display = 'none';
+            window._reportPostId = null;
+
+            if (res?.success === false) {
+                const message = String(res.message || '');
+                if (message.includes('이미 신고')) {
+                    alert('이미 신고가 접수된 글입니다.');
+                    return;
+                }
+                if (typeof toast === 'function') toast(message || '신고 처리에 실패했습니다.');
+                return;
+            }
+
+            if (typeof toast === 'function') {
+                toast('🚨 신고가 접수되었습니다.');
+            }
+        } finally {
+            window._reportPostSubmitting = false;
         }
     };
 

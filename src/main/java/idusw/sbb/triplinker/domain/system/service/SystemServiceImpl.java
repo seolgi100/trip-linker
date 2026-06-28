@@ -34,7 +34,7 @@ public class SystemServiceImpl implements SystemService {
     private final UserRepository userRepository;
     private final NotificationService notificationService;
 
-    // 게시글 신고 접수
+    // 게시글/댓글 신고 접수
     @Override
     @Transactional
     public Long reportPost(Long userId, ReportRequestDto dto) {
@@ -42,16 +42,56 @@ public class SystemServiceImpl implements SystemService {
                 .orElseThrow(() -> new IllegalArgumentException("신고 회원을 찾을 수 없습니다."));
 
         Post post = postRepository.findById(dto.postId())
+                .filter(p -> !"DELETED".equals(p.getStatus()))
                 .orElseThrow(() -> new IllegalArgumentException("신고 대상 게시글을 찾을 수 없습니다."));
+
+        Long normalizedCommentId = normalizeReportCommentId(dto.commentId());
+        validateReportTargetNotAlreadyReported(post, normalizedCommentId);
 
         Report report = Report.builder()
                 .post(post)
                 .reporter(reporter)
                 .reason(dto.reason())
-                .commentId(dto.commentId())
+                .commentId(normalizedCommentId)
                 .build();
 
         return reportRepository.save(report).getId();
+    }
+
+    private Long normalizeReportCommentId(Long commentId) {
+        if (commentId == null || commentId <= 0) {
+            return null;
+        }
+        return commentId;
+    }
+
+    private void validateReportTargetNotAlreadyReported(Post post, Long commentId) {
+        Long postId = post.getId();
+
+        // 게시글 자체 신고
+        // 누군가 이미 한 번이라도 신고했으면 모든 유저의 추가 신고를 막는다.
+        if (commentId == null) {
+            if (reportRepository.countPostReport(postId) > 0) {
+                throw new IllegalStateException("이미 신고가 접수된 글입니다.");
+            }
+            return;
+        }
+
+        // 댓글 신고
+        PostComment comment = postCommentRepository.findById(commentId)
+                .orElseThrow(() -> new IllegalArgumentException("신고 대상 댓글을 찾을 수 없습니다."));
+
+        if (comment.getPost() == null || !Objects.equals(comment.getPost().getId(), postId)) {
+            throw new IllegalArgumentException("게시글과 댓글 정보가 일치하지 않습니다.");
+        }
+
+        if (!"ACTIVE".equals(comment.getStatus())) {
+            throw new IllegalArgumentException("신고할 수 없는 댓글입니다.");
+        }
+
+        if (reportRepository.countCommentReport(postId, commentId) > 0) {
+            throw new IllegalStateException("이미 신고가 접수된 글입니다.");
+        }
     }
 
     // 내 알림 목록 조회
@@ -89,11 +129,14 @@ public class SystemServiceImpl implements SystemService {
         User reporter = userRepository.findById(reporterId)
                 .orElseThrow(() -> new IllegalArgumentException("사용자 정보를 찾을 수 없습니다."));
 
+        Long normalizedCommentId = normalizeReportCommentId(dto.commentId());
+        validateReportTargetNotAlreadyReported(post, normalizedCommentId);
+
         reportRepository.save(Report.builder()
                 .post(post)
                 .reporter(reporter)
                 .reason(dto.reason())
-                .commentId(dto.commentId())
+                .commentId(normalizedCommentId)
                 .build());
     }
 

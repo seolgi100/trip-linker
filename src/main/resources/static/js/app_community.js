@@ -385,11 +385,43 @@ async function submitReportPost() {
   const reason = sel ? sel.value : '';
   if (!reason) { toast('신고 사유를 선택해주세요'); return; }
 
-  const res = await api.post('/api/posts/' + _reportPostId + '/reports', { reason });
-  const modal = document.getElementById('reportPostModal');
-  if (modal) modal.classList.remove('open');
-  toast((res && res.success !== false) ? '🚨 신고가 접수되었습니다.' : '⚠️ 신고 처리에 실패했습니다.');
-  _reportPostId = null;
+  if (window._reportPostSubmitting) return;
+  window._reportPostSubmitting = true;
+
+  try {
+    const postId = _reportPostId || window._reportPostId || window._currentPostId || window._openedPostId;
+    if (!postId) { toast('⚠️ 신고 대상 게시글을 찾을 수 없습니다.'); return; }
+
+    const res = await api.post('/api/posts/' + postId + '/reports', {
+      postId: postId,
+      reason: reason,
+      commentId: null
+    });
+
+    const modal = document.getElementById('reportPostModal');
+    if (modal) {
+      modal.classList.remove('open');
+      modal.style.display = 'none';
+    }
+
+    if (res && res.success === false) {
+      const message = String(res.message || '');
+      if (message.includes('이미 신고')) {
+        alert('이미 신고가 접수된 글입니다.');
+      } else {
+        toast(message || '⚠️ 신고 처리에 실패했습니다.');
+      }
+      _reportPostId = null;
+      window._reportPostId = null;
+      return;
+    }
+
+    toast('🚨 신고가 접수되었습니다.');
+    _reportPostId = null;
+    window._reportPostId = null;
+  } finally {
+    window._reportPostSubmitting = false;
+  }
 }
 
 /* ═══════════════════════════════════════════════════════════════════
@@ -537,24 +569,43 @@ async function submitReportComment() {
   const reason = sel ? sel.value : '';
   if (!reason) { toast('신고 사유를 선택해주세요'); return; }
 
-  // _reportCommentPostId가 없으면 현재 열린 게시글 ID 사용
-  if (!_reportCommentPostId) {
-    _reportCommentPostId = window._currentPostId || window._openedPostId;
+  if (window._reportCommentSubmitting) return;
+  window._reportCommentSubmitting = true;
+
+  try {
+    if (!_reportCommentPostId) {
+      _reportCommentPostId = window._currentPostId || window._openedPostId;
+    }
+    if (!_reportCommentPostId) { toast('⚠️ 신고 대상 게시글을 찾을 수 없습니다.'); return; }
+    if (!_reportCommentId) { toast('⚠️ 신고 대상 댓글을 찾을 수 없습니다.'); return; }
+
+    const modal = document.getElementById('reportCommentModal');
+    if (modal) modal.style.display = 'none';
+
+    const res = await api.post('/api/posts/' + _reportCommentPostId + '/reports', {
+      postId: _reportCommentPostId,
+      reason: '[댓글 신고] ' + reason,
+      commentId: _reportCommentId
+    });
+
+    if (res && res.success === false) {
+      const message = String(res.message || '');
+      if (message.includes('이미 신고')) {
+        alert('이미 신고가 접수된 글입니다.');
+      } else {
+        toast(message || '⚠️ 신고 처리에 실패했습니다.');
+      }
+      _reportCommentId     = null;
+      _reportCommentPostId = null;
+      return;
+    }
+
+    toast('🚨 신고가 접수되었습니다.');
+    _reportCommentId     = null;
+    _reportCommentPostId = null;
+  } finally {
+    window._reportCommentSubmitting = false;
   }
-  if (!_reportCommentPostId) { toast('⚠️ 신고 대상 게시글을 찾을 수 없습니다.'); return; }
-
-  const modal = document.getElementById('reportCommentModal');
-  if (modal) modal.style.display = 'none';
-
-  /* 댓글 신고는 해당 게시글 신고 endpoint를 재사용, commentId와 reason 전달 */
-  const res = await api.post('/api/posts/' + _reportCommentPostId + '/reports', {
-    reason: '[댓글 신고] ' + reason,
-    commentId: _reportCommentId
-  });
-  const ok = res && res.success !== false;
-  toast(ok ? '🚨 신고가 접수되었습니다.' : '⚠️ 신고 처리에 실패했습니다.');
-  _reportCommentId     = null;
-  _reportCommentPostId = null;
 }
 
 async function submitComment() {
