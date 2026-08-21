@@ -43,7 +43,7 @@ public class AuthServiceImpl implements AuthService {
 
     @Override
     @Transactional(noRollbackFor = LoginFailException.class)
-    public TokenResponseDto login(LoginRequestDto request) {
+    public TokenResponseDto login(LoginRequestDto request, String ipAddress) {
 
         // 유저 조회
         User user = userRepository.findByUsername(request.username())
@@ -59,6 +59,16 @@ public class AuthServiceImpl implements AuthService {
         if (!passwordEncoder.matches(request.password(), user.getPasswordHash())) {
             user.increaseLoginFailCount();
             userRepository.save(user);
+
+            // 로그인 실패 보안 이력 기록
+            // noRollbackFor = LoginFailException 이므로 아래에서 예외를 던져도 이력은 커밋된다
+            userSecurityHistoryRepository.save(
+                    UserSecurityHistory.of(
+                            user,
+                            SecurityEventType.LOGIN_FAIL,
+                            "로그인 실패 " + user.getLoginFailCount() + "회, IP: " + ipAddress
+                    )
+            );
             if (user.isLocked()) {
                 long remainSeconds = ChronoUnit.SECONDS.between(LocalDateTime.now(), user.getLockedUntil());
                 throw new LoginFailException(true, user.getLoginFailCount(), Math.max(remainSeconds, 0));

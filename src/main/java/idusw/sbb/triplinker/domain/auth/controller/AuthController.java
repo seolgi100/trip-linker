@@ -9,6 +9,7 @@ import idusw.sbb.triplinker.domain.auth.security.CustomUserDetails;
 import idusw.sbb.triplinker.domain.auth.service.AuthService;
 import idusw.sbb.triplinker.global.common.ApiResponse;
 import idusw.sbb.triplinker.domain.auth.service.EmailAuthService;
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
@@ -26,9 +27,10 @@ public class AuthController {
     private final EmailAuthService emailAuthService;
 
     @PostMapping("/login")
-    public ResponseEntity<ApiResponse<TokenResponseDto>> login(@RequestBody LoginRequestDto request) {
+    public ResponseEntity<ApiResponse<TokenResponseDto>> login(@RequestBody LoginRequestDto request,
+                                                               HttpServletRequest servletRequest) {
 
-        TokenResponseDto tokenData = authService.login(request);
+        TokenResponseDto tokenData = authService.login(request, resolveClientIp(servletRequest));
 
         return ResponseEntity.ok(
                 ApiResponse.success("로그인 성공", tokenData)
@@ -135,5 +137,13 @@ public class AuthController {
 
     }
 
+    // 로그인 실패 이력에 남길 클라이언트 IP 추출 (프록시 뒤에 있을 경우 X-Forwarded-For 우선)
+    private String resolveClientIp(HttpServletRequest request) {
+        String forwarded = request.getHeader("X-Forwarded-For");
+        if (forwarded != null && !forwarded.isBlank()) {
+            return forwarded.split(",")[0].trim();
+        }
+        return request.getRemoteAddr();
+    }
 
 }

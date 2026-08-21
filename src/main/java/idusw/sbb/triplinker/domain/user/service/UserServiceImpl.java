@@ -16,12 +16,9 @@ import idusw.sbb.triplinker.domain.user.dto.ScrapResponseDto;
 import idusw.sbb.triplinker.domain.user.entity.Scrap;
 import idusw.sbb.triplinker.domain.user.dto.UserInfoResponseDto;
 import idusw.sbb.triplinker.domain.user.dto.UserNicknameUpdateRequest;
-import idusw.sbb.triplinker.domain.user.entity.SecurityEventType;
 import idusw.sbb.triplinker.domain.user.entity.User;
-import idusw.sbb.triplinker.domain.user.entity.UserSecurityHistory;
 import idusw.sbb.triplinker.domain.user.repository.ScrapRepository;
 import idusw.sbb.triplinker.domain.user.repository.UserRepository;
-import idusw.sbb.triplinker.domain.user.repository.UserSecurityHistoryRepository;
 import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -49,7 +46,6 @@ public class UserServiceImpl implements UserService {
     private String kakaoAdminKey;
 
     private final UserRepository userRepository;
-    private final UserSecurityHistoryRepository historyRepository;
     private final BCryptPasswordEncoder passwordEncoder;
     private final OAuthAccountRepository oAuthAccountRepository;
     private final RefreshTokenRepository refreshTokenRepository;
@@ -143,20 +139,6 @@ public class UserServiceImpl implements UserService {
             throw new IllegalArgumentException("현재 비밀번호가 올바르지 않습니다.");
         }
         user.updatePassword(passwordEncoder.encode(newRaw));
-    }
-
-    @Override
-    @Transactional
-    public void loginFailed(String username, String ipAddress) {
-        User user = userRepository.findByUsername(username)
-                .orElseThrow(() -> new IllegalArgumentException("해당 유저를 찾을 수 없습니다. Username: " + username));
-        user.increaseLoginFailCount();
-        UserSecurityHistory history = UserSecurityHistory.of(
-                user,
-                SecurityEventType.LOGIN_FAIL,
-                "로그인 실패 IP: " + ipAddress
-        );
-        historyRepository.save(history);
     }
 
     @Override

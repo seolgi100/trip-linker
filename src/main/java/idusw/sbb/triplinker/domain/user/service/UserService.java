@@ -18,7 +18,6 @@ public interface UserService {
     UserInfoResponseDto getProfile(Long userId);
     void updateNickname(Long userId, UserNicknameUpdateRequest request);
     void withdraw(Long userId);
-    void loginFailed(String username, String ipAddress);
 
     boolean verifyPassword(Long userId, String rawPassword);
     void updateProfile(Long userId, String name, String region, String gender, LocalDate birthDate, String mbti);

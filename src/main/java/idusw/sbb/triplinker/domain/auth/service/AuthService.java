@@ -7,7 +7,7 @@ import idusw.sbb.triplinker.domain.auth.dto.TokenResponseDto;
 public interface AuthService {
 
     //로그인 → 계정 잠금 체크 → JWT 발급
-    TokenResponseDto login(LoginRequestDto dto);
+    TokenResponseDto login(LoginRequestDto dto, String ipAddress);
     //닉네임(아이디) 중복 체크
     boolean checkUsername(String username);
 
